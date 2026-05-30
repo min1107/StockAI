@@ -1,0 +1,18 @@
+{
+  "name": "stockai-server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node dev-server.js",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@upstash/redis": "^1.36.2",
+    "axios": "^1.6.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "groq-sdk": "^0.5.0"
+  }
+}

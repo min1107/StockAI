@@ -1,0 +1,42 @@
+{
+  "version": 2,
+  "functions": {
+    "api/ai/recommend.js": {
+      "maxDuration": 60
+    },
+    "api/ai/analyze.js": {
+      "maxDuration": 60
+    },
+    "api/kis/prices.js": {
+      "maxDuration": 60
+    },
+    "api/kis/index.js": {
+      "maxDuration": 30
+    },
+    "api/cron/screen.js": {
+      "maxDuration": 60
+    },
+    "api/cron/supply.js": {
+      "maxDuration": 60
+    },
+    "api/cron/news.js": {
+      "maxDuration": 30
+    },
+    "api/ai/chat.js": {
+      "maxDuration": 30
+    },
+    "api/kis/sectors.js": {
+      "maxDuration": 15
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
+      ]
+    }
+  ]
+}
