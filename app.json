@@ -24,6 +24,7 @@
     },
     "web": {
       "output": "single",
+      "baseUrl": "/StockAI",
       "favicon": "./assets/images/favicon.png",
       "name": "StockAI",
       "shortName": "StockAI",
