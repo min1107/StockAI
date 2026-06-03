@@ -1,0 +1,578 @@
+{
+  "candidates": [
+    {
+      "code": "079810",
+      "name": "APS이노베이션",
+      "market": "KOSDAQ",
+      "currentPrice": 4025,
+      "per": 17.27,
+      "pbr": 0.05,
+      "marketCap": 866,
+      "symbol": "079810.KQ"
+    },
+    {
+      "code": "338100",
+      "name": "NH프라임리츠",
+      "market": "KOSPI",
+      "currentPrice": 3660,
+      "per": 3.4,
+      "pbr": 0.13,
+      "marketCap": 683,
+      "symbol": "338100.KS"
+    },
+    {
+      "code": "052260",
+      "name": "현대바이오랜드",
+      "market": "KOSDAQ",
+      "currentPrice": 3770,
+      "per": 9.06,
+      "pbr": 0.18,
+      "marketCap": 1131,
+      "symbol": "052260.KQ"
+    },
+    {
+      "code": "114450",
+      "name": "그린생명과학",
+      "market": "KOSDAQ",
+      "currentPrice": 2430,
+      "per": 16.09,
+      "pbr": 0.3,
+      "marketCap": 486,
+      "symbol": "114450.KQ"
+    },
+    {
+      "code": "004430",
+      "name": "송원산업",
+      "market": "KOSPI",
+      "currentPrice": 10280,
+      "per": 15.84,
+      "pbr": 0.31,
+      "marketCap": 2467,
+      "symbol": "004430.KS"
+    },
+    {
+      "code": "004060",
+      "name": "SG세계물산",
+      "market": "KOSPI",
+      "currentPrice": 2970,
+      "per": 16.41,
+      "pbr": 0.34,
+      "marketCap": 601,
+      "symbol": "004060.KS"
+    },
+    {
+      "code": "484120",
+      "name": "도우인시스",
+      "market": "KOSDAQ",
+      "currentPrice": 17320,
+      "per": 20.19,
+      "pbr": 0.34,
+      "marketCap": 1898,
+      "symbol": "484120.KQ"
+    },
+    {
+      "code": "118000",
+      "name": "메타케어",
+      "market": "KOSPI",
+      "currentPrice": 1331,
+      "per": 24.65,
+      "pbr": 0.42,
+      "marketCap": 229,
+      "symbol": "118000.KS"
+    },
+    {
+      "code": "002240",
+      "name": "고려제강",
+      "market": "KOSPI",
+      "currentPrice": 18970,
+      "per": 20.53,
+      "pbr": 0.53,
+      "marketCap": 5122,
+      "symbol": "002240.KS"
+    },
+    {
+      "code": "069140",
+      "name": "누리플랜",
+      "market": "KOSDAQ",
+      "currentPrice": 1792,
+      "per": 17.74,
+      "pbr": 0.54,
+      "marketCap": 271,
+      "symbol": "069140.KQ"
+    },
+    {
+      "code": "004440",
+      "name": "삼일씨엔에스",
+      "market": "KOSPI",
+      "currentPrice": 4945,
+      "per": 18.18,
+      "pbr": 0.56,
+      "marketCap": 630,
+      "symbol": "004440.KS"
+    },
+    {
+      "code": "012800",
+      "name": "대창",
+      "market": "KOSPI",
+      "currentPrice": 1347,
+      "per": 9.76,
+      "pbr": 0.75,
+      "marketCap": 1228,
+      "symbol": "012800.KS"
+    },
+    {
+      "code": "004970",
+      "name": "신라교역",
+      "market": "KOSPI",
+      "currentPrice": 9070,
+      "per": 9.57,
+      "pbr": 0.77,
+      "marketCap": 1451,
+      "symbol": "004970.KS"
+    },
+    {
+      "code": "060540",
+      "name": "에스에이티",
+      "market": "KOSDAQ",
+      "currentPrice": 1298,
+      "per": 8.37,
+      "pbr": 0.77,
+      "marketCap": 339,
+      "symbol": "060540.KQ"
+    },
+    {
+      "code": "002690",
+      "name": "동일제강",
+      "market": "KOSPI",
+      "currentPrice": 1372,
+      "per": 17.37,
+      "pbr": 0.87,
+      "marketCap": 279,
+      "symbol": "002690.KS"
+    },
+    {
+      "code": "054940",
+      "name": "엑사이엔씨",
+      "market": "KOSDAQ",
+      "currentPrice": 633,
+      "per": 5.36,
+      "pbr": 0.92,
+      "marketCap": 210,
+      "symbol": "054940.KQ"
+    },
+    {
+      "code": "001230",
+      "name": "동국홀딩스",
+      "market": "KOSPI",
+      "currentPrice": 1763,
+      "per": 13.67,
+      "pbr": 0.94,
+      "marketCap": 2742,
+      "symbol": "001230.KS"
+    },
+    {
+      "code": "120110",
+      "name": "코오롱인더",
+      "market": "KOSPI",
+      "currentPrice": 66200,
+      "per": 20.84,
+      "pbr": 1.01,
+      "marketCap": 19824,
+      "symbol": "120110.KS"
+    },
+    {
+      "code": "035760",
+      "name": "CJ ENM",
+      "market": "KOSDAQ",
+      "currentPrice": 40750,
+      "per": 9.15,
+      "pbr": 1.06,
+      "marketCap": 8936,
+      "symbol": "035760.KQ"
+    },
+    {
+      "code": "064480",
+      "name": "브리지텍",
+      "market": "KOSDAQ",
+      "currentPrice": 3270,
+      "per": 22.71,
+      "pbr": 1.1,
+      "marketCap": 391,
+      "symbol": "064480.KQ"
+    },
+    {
+      "code": "004840",
+      "name": "DRB동일",
+      "market": "KOSPI",
+      "currentPrice": 4490,
+      "per": 24.27,
+      "pbr": 1.11,
+      "marketCap": 865,
+      "symbol": "004840.KS"
+    },
+    {
+      "code": "220180",
+      "name": "핸디소프트",
+      "market": "KOSDAQ",
+      "currentPrice": 1500,
+      "per": 18.99,
+      "pbr": 1.12,
+      "marketCap": 359,
+      "symbol": "220180.KQ"
+    },
+    {
+      "code": "093380",
+      "name": "풍강",
+      "market": "KOSDAQ",
+      "currentPrice": 2530,
+      "per": 5.8,
+      "pbr": 1.14,
+      "marketCap": 250,
+      "symbol": "093380.KQ"
+    },
+    {
+      "code": "155650",
+      "name": "와이엠씨",
+      "market": "KOSDAQ",
+      "currentPrice": 3390,
+      "per": 19.04,
+      "pbr": 1.15,
+      "marketCap": 643,
+      "symbol": "155650.KQ"
+    },
+    {
+      "code": "376290",
+      "name": "씨유테크",
+      "market": "KOSDAQ",
+      "currentPrice": 2565,
+      "per": 8.55,
+      "pbr": 1.18,
+      "marketCap": 453,
+      "symbol": "376290.KQ"
+    },
+    {
+      "code": "067010",
+      "name": "이씨에스",
+      "market": "KOSDAQ",
+      "currentPrice": 2025,
+      "per": 16.6,
+      "pbr": 1.18,
+      "marketCap": 220,
+      "symbol": "067010.KQ"
+    },
+    {
+      "code": "036460",
+      "name": "한국가스공사",
+      "market": "KOSPI",
+      "currentPrice": 33900,
+      "per": 9.96,
+      "pbr": 1.23,
+      "marketCap": 31294,
+      "symbol": "036460.KS"
+    },
+    {
+      "code": "139480",
+      "name": "이마트",
+      "market": "KOSPI",
+      "currentPrice": 88400,
+      "per": 19.49,
+      "pbr": 1.27,
+      "marketCap": 24395,
+      "symbol": "139480.KS"
+    },
+    {
+      "code": "055490",
+      "name": "테이팩스",
+      "market": "KOSPI",
+      "currentPrice": 21200,
+      "per": 19.65,
+      "pbr": 1.3,
+      "marketCap": 1011,
+      "symbol": "055490.KS"
+    },
+    {
+      "code": "046120",
+      "name": "오르비텍",
+      "market": "KOSDAQ",
+      "currentPrice": 7650,
+      "per": 15.3,
+      "pbr": 1.34,
+      "marketCap": 2590,
+      "symbol": "046120.KQ"
+    },
+    {
+      "code": "348950",
+      "name": "제이알글로벌리츠",
+      "market": "KOSPI",
+      "currentPrice": 1182,
+      "per": 14.41,
+      "pbr": 1.35,
+      "marketCap": 2333,
+      "symbol": "348950.KS"
+    },
+    {
+      "code": "000700",
+      "name": "유수홀딩스",
+      "market": "KOSPI",
+      "currentPrice": 5280,
+      "per": 13.5,
+      "pbr": 1.35,
+      "marketCap": 1375,
+      "symbol": "000700.KS"
+    },
+    {
+      "code": "357120",
+      "name": "코람코라이프인프라리츠",
+      "market": "KOSPI",
+      "currentPrice": 3985,
+      "per": 22.14,
+      "pbr": 1.36,
+      "marketCap": 3879,
+      "symbol": "357120.KS"
+    },
+    {
+      "code": "003830",
+      "name": "대한화섬",
+      "market": "KOSPI",
+      "currentPrice": 112300,
+      "per": 11.63,
+      "pbr": 1.37,
+      "marketCap": 1491,
+      "symbol": "003830.KS"
+    },
+    {
+      "code": "115480",
+      "name": "씨유메디칼",
+      "market": "KOSDAQ",
+      "currentPrice": 1865,
+      "per": 7.09,
+      "pbr": 1.38,
+      "marketCap": 226,
+      "symbol": "115480.KQ"
+    },
+    {
+      "code": "031510",
+      "name": "오스템",
+      "market": "KOSDAQ",
+      "currentPrice": 1185,
+      "per": 2.79,
+      "pbr": 1.4,
+      "marketCap": 332,
+      "symbol": "031510.KQ"
+    },
+    {
+      "code": "032280",
+      "name": "삼일",
+      "market": "KOSDAQ",
+      "currentPrice": 1180,
+      "per": 17.1,
+      "pbr": 1.51,
+      "marketCap": 191,
+      "symbol": "032280.KQ"
+    },
+    {
+      "code": "067770",
+      "name": "세진티에스",
+      "market": "KOSDAQ",
+      "currentPrice": 1821,
+      "per": 9.9,
+      "pbr": 1.51,
+      "marketCap": 153,
+      "symbol": "067770.KQ"
+    },
+    {
+      "code": "024070",
+      "name": "WISCOM",
+      "market": "KOSPI",
+      "currentPrice": 1888,
+      "per": 24.52,
+      "pbr": 1.53,
+      "marketCap": 289,
+      "symbol": "024070.KS"
+    },
+    {
+      "code": "048870",
+      "name": "시너지이노베이션",
+      "market": "KOSDAQ",
+      "currentPrice": 1720,
+      "per": 24.93,
+      "pbr": 1.53,
+      "marketCap": 1515,
+      "symbol": "048870.KQ"
+    },
+    {
+      "code": "183190",
+      "name": "아세아시멘트",
+      "market": "KOSPI",
+      "currentPrice": 9520,
+      "per": 16.91,
+      "pbr": 1.55,
+      "marketCap": 3475,
+      "symbol": "183190.KS"
+    },
+    {
+      "code": "126880",
+      "name": "제이엔케이글로벌",
+      "market": "KOSDAQ",
+      "currentPrice": 2995,
+      "per": 16.37,
+      "pbr": 1.57,
+      "marketCap": 695,
+      "symbol": "126880.KQ"
+    },
+    {
+      "code": "067830",
+      "name": "세이브존I&C",
+      "market": "KOSPI",
+      "currentPrice": 2450,
+      "per": 12.5,
+      "pbr": 1.59,
+      "marketCap": 1006,
+      "symbol": "067830.KS"
+    },
+    {
+      "code": "026940",
+      "name": "부국철강",
+      "market": "KOSPI",
+      "currentPrice": 2000,
+      "per": 20,
+      "pbr": 1.64,
+      "marketCap": 400,
+      "symbol": "026940.KS"
+    },
+    {
+      "code": "081000",
+      "name": "일진다이아",
+      "market": "KOSPI",
+      "currentPrice": 10500,
+      "per": 17.24,
+      "pbr": 1.66,
+      "marketCap": 1491,
+      "symbol": "081000.KS"
+    },
+    {
+      "code": "049830",
+      "name": "승일",
+      "market": "KOSDAQ",
+      "currentPrice": 6530,
+      "per": 19.43,
+      "pbr": 1.68,
+      "marketCap": 400,
+      "symbol": "049830.KQ"
+    },
+    {
+      "code": "006650",
+      "name": "대한유화",
+      "market": "KOSPI",
+      "currentPrice": 121900,
+      "per": 9.52,
+      "pbr": 1.74,
+      "marketCap": 7924,
+      "symbol": "006650.KS"
+    },
+    {
+      "code": "036560",
+      "name": "KZ정밀",
+      "market": "KOSDAQ",
+      "currentPrice": 12480,
+      "per": 12.95,
+      "pbr": 1.75,
+      "marketCap": 1966,
+      "symbol": "036560.KQ"
+    },
+    {
+      "code": "016600",
+      "name": "큐캐피탈",
+      "market": "KOSDAQ",
+      "currentPrice": 3265,
+      "per": 19.09,
+      "pbr": 1.75,
+      "marketCap": 466,
+      "symbol": "016600.KQ"
+    },
+    {
+      "code": "001380",
+      "name": "SG글로벌",
+      "market": "KOSPI",
+      "currentPrice": 1490,
+      "per": 9.25,
+      "pbr": 1.86,
+      "marketCap": 335,
+      "symbol": "001380.KS"
+    },
+    {
+      "code": "029530",
+      "name": "신도리코",
+      "market": "KOSPI",
+      "currentPrice": 41700,
+      "per": 15.85,
+      "pbr": 1.88,
+      "marketCap": 4051,
+      "symbol": "029530.KS"
+    },
+    {
+      "code": "003300",
+      "name": "한일홀딩스",
+      "market": "KOSPI",
+      "currentPrice": 16940,
+      "per": 15.15,
+      "pbr": 1.91,
+      "marketCap": 5223,
+      "symbol": "003300.KS"
+    },
+    {
+      "code": "140520",
+      "name": "대창스틸",
+      "market": "KOSDAQ",
+      "currentPrice": 1974,
+      "per": 20.35,
+      "pbr": 1.91,
+      "marketCap": 417,
+      "symbol": "140520.KQ"
+    },
+    {
+      "code": "114630",
+      "name": "폴라리스우노",
+      "market": "KOSDAQ",
+      "currentPrice": 1736,
+      "per": 7.06,
+      "pbr": 1.93,
+      "marketCap": 299,
+      "symbol": "114630.KQ"
+    },
+    {
+      "code": "017180",
+      "name": "명문제약",
+      "market": "KOSPI",
+      "currentPrice": 1384,
+      "per": 15.55,
+      "pbr": 1.94,
+      "marketCap": 470,
+      "symbol": "017180.KS"
+    },
+    {
+      "code": "060980",
+      "name": "HL홀딩스",
+      "market": "KOSPI",
+      "currentPrice": 44500,
+      "per": 11.5,
+      "pbr": 1.95,
+      "marketCap": 4040,
+      "symbol": "060980.KS"
+    },
+    {
+      "code": "010660",
+      "name": "화천기계",
+      "market": "KOSPI",
+      "currentPrice": 4320,
+      "per": 20.57,
+      "pbr": 1.97,
+      "marketCap": 950,
+      "symbol": "010660.KS"
+    }
+  ],
+  "totalScanned": 3954,
+  "filteredCount": 57,
+  "universeSize": 3954,
+  "screenedAt": "2026-06-03T20:09:43.934Z"
+}

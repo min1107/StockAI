@@ -42,6 +42,10 @@ async function getScreenCandidates() {
   }
   const item = memCache.get(SCREEN_KEY);
   if (item && Date.now() < item.expiry) return item.value;
+  // 정적 파일 폴백 (로컬에서 buildScreenDB.js로 생성)
+  try {
+    return require('../data/screenCandidates.json');
+  } catch (_) {}
   return null;
 }
 

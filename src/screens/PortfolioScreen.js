@@ -411,8 +411,19 @@ function AddHoldingModal({ visible, onClose, onAdd }) {
       if (result.canceled) return;
 
       setCsvLoading(true);
-      const fileUri = result.assets[0].uri;
-      const content = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.UTF8 });
+      let content;
+      if (Platform.OS === 'web') {
+        const file = result.assets[0].file;
+        content = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsText(file, 'utf-8');
+        });
+      } else {
+        const fileUri = result.assets[0].uri;
+        content = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.UTF8 });
+      }
       const parsed = parsePortfolioCSV(content);
 
       if (parsed.length === 0) {
