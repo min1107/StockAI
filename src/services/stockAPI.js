@@ -249,7 +249,7 @@ export const searchStocks = async (query) => {
   try {
     const response = await axios.get(`${SERVER}/api/stocks/search`, {
       params: { q: query.trim() },
-      timeout: 6000,
+      timeout: 15000,
     });
     const results = response.data || [];
     console.log(`🔍 검색어: "${query}" - ${results.length}개 종목 발견`);

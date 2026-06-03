@@ -10,8 +10,7 @@ module.exports = async (req, res) => {
       return res.status(200).json([]);
     }
 
-    // 1단계: KRX 전체 종목 DB에서 검색 (DB 로딩 중이면 완료 대기)
-    await stocksDB.waitReady();
+    // 1단계: 로컬 종목 DB 검색 (동기 로드된 fallback 즉시 사용 가능)
     const dbResults = stocksDB.search(q);
     if (dbResults.length > 0) {
       return res.status(200).json(dbResults);

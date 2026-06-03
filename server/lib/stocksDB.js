@@ -1,50 +1,53 @@
 const axios = require('axios');
+const path = require('path');
 
-// 전체 종목 DB (메모리 캐시)
+// 로컬 fallback JSON (서버 시작 즉시 동기 로드)
 let stocksDB = [];
+try {
+  const fallback = require(path.join(__dirname, '../data/koreanStocks.json'));
+  stocksDB = fallback.map(s => ({
+    symbol: s.code + (s.market === 'KOSPI' ? '.KS' : '.KQ'),
+    name: s.name,
+    code: s.code,
+    exchange: s.market === 'KOSPI' ? 'KSC' : 'KOE',
+    type: 'EQUITY',
+  }));
+  console.log(`📦 fallback 종목 DB 로드: ${stocksDB.length}개`);
+} catch (e) {
+  console.error('fallback DB 로드 실패:', e.message);
+}
+
 let lastUpdated = null;
-let loadingPromise = null;
-const UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // 1일
+const UPDATE_INTERVAL = 24 * 60 * 60 * 1000;
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
-// kind.krx.co.kr — 로그인 없이 전종목 HTML 테이블 다운로드
 const fetchMarket = async (marketType, suffix, exchange) => {
   const resp = await axios.get(
     'https://kind.krx.co.kr/corpgeneral/corpList.do',
     {
-      params: {
-        method: 'download',
-        searchType: '13',
-        marketType,
-      },
+      params: { method: 'download', searchType: '13', marketType },
       headers: HEADERS,
       timeout: 15000,
       responseType: 'arraybuffer',
     }
   );
-
-  // EUC-KR 인코딩 디코딩
   const iconv = require('iconv-lite');
   const html = iconv.decode(Buffer.from(resp.data), 'euc-kr');
-  // <td>회사명</td> 바로 다음 <td>6자리코드</td> 패턴으로 직접 추출
   const rows = [];
   const pattern = /<td[^>]*>\s*([^<\t\r\n]+?)\s*<\/td>\s*<td[^>]*>\s*(\d{6})\s*<\/td>/gi;
   let m;
   while ((m = pattern.exec(html)) !== null) {
     const name = m[1].trim();
     const code = m[2].trim();
-    if (name && code) {
-      rows.push({ symbol: code + suffix, name, code, exchange, type: 'EQUITY' });
-    }
+    if (name && code) rows.push({ symbol: code + suffix, name, code, exchange, type: 'EQUITY' });
   }
   return rows;
 };
 
-// 네이버 금융 ETF 전체 목록
 const fetchETFs = async () => {
   try {
     const resp = await axios.get('https://finance.naver.com/api/sise/etfItemList.nhn', {
@@ -68,7 +71,7 @@ const fetchETFs = async () => {
   }
 };
 
-// 전체 종목 DB 갱신
+// KRX에서 전체 종목 갱신 (백그라운드, 실패해도 fallback 유지)
 const refreshDB = async () => {
   try {
     console.log('📋 KRX 전체 종목 로딩...');
@@ -78,24 +81,22 @@ const refreshDB = async () => {
       fetchMarket('konexMkt', '.KQ', 'KNX').catch(() => []),
       fetchETFs(),
     ]);
-
-    // 중복 제거 (코드 기준)
     const seen = new Set();
     const all = [...kospi, ...kosdaq, ...konex, ...etfs].filter(s => {
       if (seen.has(s.code)) return false;
       seen.add(s.code);
       return true;
     });
-
-    stocksDB = all;
-    lastUpdated = Date.now();
-    console.log(`✅ 전체 종목 DB 완료: KOSPI ${kospi.length} + KOSDAQ ${kosdaq.length} + KONEX ${konex.length} + ETF ${etfs.length} = ${stocksDB.length}개`);
+    if (all.length > 0) {
+      stocksDB = all;
+      lastUpdated = Date.now();
+      console.log(`✅ KRX 종목 DB 갱신: ${stocksDB.length}개`);
+    }
   } catch (err) {
-    console.error('KRX 종목 로딩 실패:', err.message);
+    console.error('KRX 종목 로딩 실패 (fallback 유지):', err.message);
   }
 };
 
-// 검색
 const search = (query) => {
   if (!query || stocksDB.length === 0) return [];
   const q = query.toLowerCase().trim();
@@ -104,21 +105,12 @@ const search = (query) => {
   ).slice(0, 20);
 };
 
-// DB 로딩 완료 대기 (최대 20초)
-const waitReady = () => {
-  if (stocksDB.length > 0) return Promise.resolve();
-  if (loadingPromise) return loadingPromise;
-  return Promise.resolve();
-};
-
-// 초기화 + 주기 갱신
 const init = () => {
-  loadingPromise = refreshDB().finally(() => { loadingPromise = null; });
+  // fallback은 이미 동기 로드됨 — KRX 갱신은 백그라운드
+  refreshDB();
   setInterval(() => {
-    if (!lastUpdated || Date.now() - lastUpdated > UPDATE_INTERVAL) {
-      loadingPromise = refreshDB().finally(() => { loadingPromise = null; });
-    }
+    if (!lastUpdated || Date.now() - lastUpdated > UPDATE_INTERVAL) refreshDB();
   }, UPDATE_INTERVAL);
 };
 
-module.exports = { init, search, waitReady, getAll: () => stocksDB };
+module.exports = { init, search, getAll: () => stocksDB };
