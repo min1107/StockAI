@@ -2,12 +2,15 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/server.js",
+      "src": "index.js",
       "use": "@vercel/node",
-      "config": { "maxDuration": 60 }
+      "config": {
+        "maxDuration": 60,
+        "includeFiles": ["api/**", "lib/**"]
+      }
     }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "/api/server" }
+    { "src": "/(.*)", "dest": "/" }
   ]
 }

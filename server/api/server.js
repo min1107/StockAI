@@ -1,11 +1,19 @@
 const express = require('express');
-const cors = require('cors');
 
 const app = express();
-app.use(cors());
+
+// CORS - 모든 응답에 헤더 추가 (미들웨어 가장 먼저)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  next();
+});
+
 app.use(express.json());
 
-// API 핸들러
+// 핸들러 로드
 const kisPrice = require('./kis/price');
 const kisChart = require('./kis/chart');
 const kisInvestor = require('./kis/investor');
@@ -31,41 +39,41 @@ const cronSupply = require('./cron/supply');
 const cronScreen = require('./cron/screen');
 const stocksDB = require('../lib/stocksDB');
 
-// KIS API
-app.all('/api/kis/price', kisPrice);
-app.all('/api/kis/chart', kisChart);
-app.all('/api/kis/investor', kisInvestor);
-app.all('/api/kis/search', kisSearch);
-app.all('/api/kis/intraday', kisIntraday);
-app.all('/api/kis/etf', kisEtf);
-app.all('/api/kis/prices', kisPrices);
-app.all('/api/kis/warmup', kisWarmup);
-app.all('/api/kis/index', kisIndex);
-app.all('/api/kis/sectors', kisSectors);
+// Vercel이 /api prefix를 붙이거나 제거할 수 있어서 둘 다 등록
+const router = express.Router();
 
-// AI API
-app.all('/api/ai/conservative', aiConservative);
-app.all('/api/ai/aggressive', aiAggressive);
-app.all('/api/ai/analyze', aiAnalyze);
-app.all('/api/ai/recommend', aiRecommend);
-app.all('/api/ai/portfolio', aiPortfolio);
-app.all('/api/ai/chat', aiChat);
+router.all('/kis/price', kisPrice);
+router.all('/kis/chart', kisChart);
+router.all('/kis/investor', kisInvestor);
+router.all('/kis/search', kisSearch);
+router.all('/kis/intraday', kisIntraday);
+router.all('/kis/etf', kisEtf);
+router.all('/kis/prices', kisPrices);
+router.all('/kis/warmup', kisWarmup);
+router.all('/kis/index', kisIndex);
+router.all('/kis/sectors', kisSectors);
+router.all('/ai/conservative', aiConservative);
+router.all('/ai/aggressive', aiAggressive);
+router.all('/ai/analyze', aiAnalyze);
+router.all('/ai/recommend', aiRecommend);
+router.all('/ai/portfolio', aiPortfolio);
+router.all('/ai/chat', aiChat);
+router.all('/stocks/search', stocksSearch);
+router.all('/news', news);
+router.all('/macro/collect', macroCollect);
+router.all('/macro/context', macroContext);
+router.all('/cron/news', cronNews);
+router.all('/cron/supply', cronSupply);
+router.all('/cron/screen', cronScreen);
 
-// 기타 API
-app.all('/api/stocks/search', stocksSearch);
-app.all('/api/news', news);
-app.all('/api/macro/collect', macroCollect);
-app.all('/api/macro/context', macroContext);
-app.all('/api/cron/news', cronNews);
-app.all('/api/cron/supply', cronSupply);
-app.all('/api/cron/screen', cronScreen);
+// /api prefix 있는 경우와 없는 경우 모두 처리
+app.use('/api', router);
+app.use('/', router);
 
-// Health check
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'StockAI Server Running' });
 });
 
-// 종목 DB 초기 로딩
 stocksDB.init();
 
 module.exports = app;
