@@ -10,34 +10,15 @@ module.exports = async (req, res) => {
       return res.status(200).json([]);
     }
 
-    // 1단계: KRX 전체 종목 DB에서 검색 (가장 빠르고 완전함)
+    // 1단계: KRX 전체 종목 DB에서 검색 (DB 로딩 중이면 완료 대기)
+    await stocksDB.waitReady();
     const dbResults = stocksDB.search(q);
     if (dbResults.length > 0) {
       return res.status(200).json(dbResults);
     }
 
-    // 2단계: DB 미로딩 or 미국 주식 — 네이버 + Yahoo 폴백
+    // 2단계: DB 미로딩 or 미국 주식 — Yahoo 폴백
     const results = [];
-
-    try {
-      const naverResp = await axios.get('https://ac.stock.naver.com/ac', {
-        params: { q: q.trim(), target: 'stock,etf,index,fund,marketindicator' },
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        timeout: 4000,
-      });
-      const items = naverResp.data?.items ?? [];
-      for (const item of items) {
-        const code = item[0], name = item[1], market = item[2] || '';
-        if (!code || !name) continue;
-        const isKospi = market.includes('유가증권') || market.includes('KOSPI');
-        results.push({
-          symbol: code + (isKospi ? '.KS' : '.KQ'),
-          name, code,
-          exchange: isKospi ? 'KSC' : 'KOE',
-          type: 'EQUITY',
-        });
-      }
-    } catch {}
 
     // 미국 주식 (영문 입력 시)
     if (/^[a-zA-Z]/.test(q.trim())) {

@@ -3,6 +3,7 @@ const axios = require('axios');
 // 전체 종목 DB (메모리 캐시)
 let stocksDB = [];
 let lastUpdated = null;
+let loadingPromise = null;
 const UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // 1일
 
 const HEADERS = {
@@ -103,14 +104,21 @@ const search = (query) => {
   ).slice(0, 20);
 };
 
+// DB 로딩 완료 대기 (최대 20초)
+const waitReady = () => {
+  if (stocksDB.length > 0) return Promise.resolve();
+  if (loadingPromise) return loadingPromise;
+  return Promise.resolve();
+};
+
 // 초기화 + 주기 갱신
 const init = () => {
-  refreshDB();
+  loadingPromise = refreshDB().finally(() => { loadingPromise = null; });
   setInterval(() => {
     if (!lastUpdated || Date.now() - lastUpdated > UPDATE_INTERVAL) {
-      refreshDB();
+      loadingPromise = refreshDB().finally(() => { loadingPromise = null; });
     }
   }, UPDATE_INTERVAL);
 };
 
-module.exports = { init, search, getAll: () => stocksDB };
+module.exports = { init, search, waitReady, getAll: () => stocksDB };
