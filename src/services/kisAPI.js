@@ -3,15 +3,16 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 
 // Expo 개발서버 IP를 자동 감지 → IP 바뀌어도 자동 적용
+const PROD_SERVER = 'https://server-nine-alpha-95.vercel.app';
+
 const getServerUrl = () => {
   if (API_BASE_URL) return API_BASE_URL;
-  // Expo Go에서 Metro 서버 호스트로부터 IP 추출
   const expoHost = Constants.expoConfig?.hostUri || Constants.manifest?.debuggerHost;
   if (expoHost) {
     const ip = expoHost.split(':')[0];
     return `http://${ip}:3000`;
   }
-  return 'http://localhost:3000';
+  return PROD_SERVER;
 };
 
 const SERVER = getServerUrl();

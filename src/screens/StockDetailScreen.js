@@ -42,6 +42,7 @@ export default function StockDetailScreen({ route, navigation }) {
   const { symbol, name } = route.params;
   const [chatVisible, setChatVisible] = useState(false);
   const [stockData, setStockData] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState('1d');
@@ -232,6 +233,7 @@ export default function StockDetailScreen({ route, navigation }) {
     setStockData(data);
   } catch (error) {
     console.error('주식 상세 정보 로딩 실패:', error);
+    setLoadError(error.message || String(error));
     setLoading(false);
     return;
   }
@@ -632,6 +634,7 @@ export default function StockDetailScreen({ route, navigation }) {
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorText}>데이터를 불러올 수 없습니다</Text>
+        {loadError ? <Text style={[styles.errorText, { fontSize: 11, marginTop: 6, color: '#888' }]}>{loadError}</Text> : null}
         <TouchableOpacity style={styles.retryButton} onPress={loadStockDetail}>
           <Text style={styles.retryText}>다시 시도</Text>
         </TouchableOpacity>

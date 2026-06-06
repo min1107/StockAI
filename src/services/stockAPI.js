@@ -5,11 +5,13 @@ import { getKISStockPrice, getKISChartData } from './kisAPI';
 
 const BASE_URL = 'https://query1.finance.yahoo.com';
 
+const PROD_SERVER = 'https://server-nine-alpha-95.vercel.app';
+
 const getServerUrl = () => {
   if (API_BASE_URL) return API_BASE_URL;
   const expoHost = Constants.expoConfig?.hostUri || Constants.manifest?.debuggerHost;
   if (expoHost) return `http://${expoHost.split(':')[0]}:3000`;
-  return 'http://localhost:3000';
+  return PROD_SERVER;
 };
 
 const SERVER = getServerUrl();
