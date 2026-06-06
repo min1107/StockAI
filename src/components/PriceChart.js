@@ -2,399 +2,328 @@ import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 const screenWidth = Dimensions.get('window').width;
-const chartWidth = screenWidth - 40;
-const candleWidth = 12;
+const chartWidth = screenWidth - 32;
+const CANDLE_W = 9;
+const CANDLE_GAP = 3;
 
-// 레이아웃 상수
-const padding = { top: 30, right: 15, bottom: 40, left: 60 };
-const PRICE_AREA_HEIGHT = 200;
-const VOLUME_GAP = 14;
-const VOLUME_AREA_HEIGHT = 52;
-const CHART_HEIGHT = padding.top + PRICE_AREA_HEIGHT + VOLUME_GAP + VOLUME_AREA_HEIGHT + padding.bottom;
+const PAD = { top: 16, right: 8, bottom: 32, left: 58 };
+const PRICE_H = 240;
+const VOL_H = 44;
+const VOL_GAP = 8;
+const TOTAL_H = PAD.top + PRICE_H + VOL_GAP + VOL_H + PAD.bottom;
 
-const PRICE_TOP = padding.top;
-const PRICE_BOTTOM = PRICE_TOP + PRICE_AREA_HEIGHT;
-const VOLUME_TOP = PRICE_BOTTOM + VOLUME_GAP;
-const VOLUME_BOTTOM = VOLUME_TOP + VOLUME_AREA_HEIGHT;
+const PRICE_TOP = PAD.top;
+const PRICE_BOT = PRICE_TOP + PRICE_H;
+const VOL_TOP = PRICE_BOT + VOL_GAP;
+const VOL_BOT = VOL_TOP + VOL_H;
+
+// 색상 팔레트 (TradingView 다크 기준)
+const C = {
+  bg: '#131722',
+  chartBg: '#0E1116',
+  grid: '#1E2230',
+  axis: '#2A3042',
+  up: '#26A69A',
+  down: '#EF5350',
+  upVol: '#26A69A55',
+  downVol: '#EF535055',
+  ma5: '#F7B731',
+  ma20: '#5C6BC0',
+  ma60: '#AB47BC',
+  text: '#D9E0E8',
+  textDim: '#4A5568',
+  textMid: '#718096',
+};
 
 export default function PriceChart({ data, period }) {
   if (!data || data.length === 0) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.noDataText}>차트 데이터 로딩 중...</Text>
+      <View style={styles.empty}>
+        <Text style={styles.emptyText}>차트 데이터 로딩 중...</Text>
       </View>
     );
   }
 
-  const prices = data.map(item => [item.high, item.low]).flat();
-  const maxPrice = Math.max(...prices);
-  const minPrice = Math.min(...prices);
-  const priceRange = maxPrice - minPrice;
-  const priceChange = data[data.length - 1]?.close - data[0]?.open;
-  const isPositive = priceChange >= 0;
+  const prices = data.flatMap(d => [d.high, d.low]);
+  const rawMax = Math.max(...prices);
+  const rawMin = Math.min(...prices);
+  const pad = (rawMax - rawMin) * 0.05;
+  const maxP = rawMax + pad;
+  const minP = rawMin - pad;
+  const priceRange = maxP - minP;
 
-  const innerWidth = chartWidth - padding.left - padding.right;
-  const totalWidth = Math.max(innerWidth, data.length * (candleWidth + 4));
-  const candleSpacing = totalWidth / data.length;
+  const innerW = chartWidth - PAD.left - PAD.right;
+  const candleStep = CANDLE_W + CANDLE_GAP;
+  const totalW = Math.max(innerW, data.length * candleStep);
 
-  // 가격 → Y 좌표 (가격 영역 기준)
-  const priceToY = (price) => {
-    const ratio = (price - minPrice) / (priceRange || 1);
-    return PRICE_TOP + PRICE_AREA_HEIGHT * (1 - ratio);
-  };
+  const pY = (price) => PRICE_TOP + PRICE_H * (1 - (price - minP) / (priceRange || 1));
 
-  // 이동평균 계산
-  const calcMA = (period) => data.map((_, i) => {
-    if (i < period - 1) return null;
-    const slice = data.slice(i - period + 1, i + 1);
-    return slice.reduce((sum, d) => sum + d.close, 0) / period;
+  const calcMA = (n) => data.map((_, i) => {
+    if (i < n - 1) return null;
+    return data.slice(i - n + 1, i + 1).reduce((s, d) => s + d.close, 0) / n;
   });
 
-  const ma5Values = calcMA(5);
-  const ma20Values = calcMA(20);
-  const ma60Values = data.length >= 60 ? calcMA(60) : null;
-
-  // MA → SVG Path (null 구간에서 선 끊기)
-  const maToPath = (maValues) => {
-    if (!maValues) return '';
-    let pathStr = '';
-    let lastNull = true;
-    maValues.forEach((val, i) => {
-      if (val !== null) {
-        const x = padding.left + candleSpacing * i + candleSpacing / 2;
-        const y = priceToY(val);
-        pathStr += lastNull ? `M ${x} ${y} ` : `L ${x} ${y} `;
-        lastNull = false;
-      } else {
-        lastNull = true;
-      }
+  const maPath = (vals, color) => {
+    if (!vals) return null;
+    let d = '';
+    let gap = true;
+    vals.forEach((v, i) => {
+      if (v == null) { gap = true; return; }
+      const x = PAD.left + i * candleStep + CANDLE_W / 2;
+      const y = pY(v);
+      d += gap ? `M${x},${y}` : `L${x},${y}`;
+      gap = false;
     });
-    return pathStr;
+    return d ? <Path key={color} d={d} stroke={color} strokeWidth="1.5" fill="none" /> : null;
   };
 
-  // 거래량
-  const volumes = data.map(d => d.volume || 0);
-  const maxVolume = Math.max(...volumes, 1);
-  const hasVolume = volumes.some(v => v > 0);
-  const volToHeight = (vol) => (vol / maxVolume) * VOLUME_AREA_HEIGHT;
+  const ma5 = calcMA(5);
+  const ma20 = calcMA(20);
+  const ma60 = data.length >= 30 ? calcMA(60) : null;
 
-  // Y축 눈금 (5개)
-  const yTicks = Array.from({ length: 5 }, (_, i) => {
-    const value = minPrice + (priceRange * i / 4);
-    return { value, y: priceToY(value) };
+  const volumes = data.map(d => d.volume || 0);
+  const maxVol = Math.max(...volumes, 1);
+  const hasVol = volumes.some(v => v > 0);
+
+  // Y축 눈금 4개
+  const yTicks = [0, 1, 2, 3].map(i => {
+    const v = minP + (priceRange * i / 3);
+    return { v, y: pY(v) };
   });
 
-  const formatPrice = (price) => {
-    if (price >= 1000000) return `${(price / 1000000).toFixed(1)}M`;
-    if (price >= 1000) return `${(price / 1000).toFixed(1)}K`;
-    if (price >= 100) return price.toFixed(0);
-    if (price >= 1) return price.toFixed(1);
-    return price.toFixed(2);
+  const fmtPrice = (p) => {
+    if (p >= 1000000) return (p / 1000000).toFixed(2) + 'M';
+    if (p >= 1000) return Math.round(p).toLocaleString();
+    return p.toFixed(0);
   };
 
-  let maxLabels;
-  if (data.length <= 10) maxLabels = data.length;
-  else if (period === '1d') maxLabels = Math.min(12, data.length);
-  else if (period === '5d') maxLabels = Math.min(15, data.length);
-  else if (period === '1mo') maxLabels = Math.min(8, data.length);
-  else maxLabels = data.length > 100 ? Math.min(20, data.length) : Math.min(10, data.length);
-
-  const labelInterval = Math.max(1, Math.floor(data.length / maxLabels));
+  // X축 레이블 (최대 6개)
+  const maxX = 6;
+  const step = Math.max(1, Math.floor(data.length / maxX));
   const xLabels = data
-    .map((item, index) => ({ ...item, index }))
-    .filter((_, i) => i % labelInterval === 0 || i === data.length - 1);
+    .map((d, i) => ({ ...d, i }))
+    .filter((_, i) => i % step === 0 || i === data.length - 1);
 
-  const svgWidth = Math.max(chartWidth, totalWidth + padding.left + padding.right);
+  const svgW = totalW + PAD.left + PAD.right;
+
+  const periodLabel = { '1d': '1일', '5d': '5일', '1mo': '1개월', '3mo': '3개월' }[period] || period;
+  const lastClose = data[data.length - 1]?.close;
+  const firstOpen = data[0]?.open;
+  const change = lastClose - firstOpen;
+  const changePct = firstOpen ? (change / firstOpen) * 100 : 0;
+  const isUp = change >= 0;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.wrap}>
       {/* 헤더 */}
       <View style={styles.header}>
-        <View style={styles.priceInfo}>
-          <Text style={styles.priceLabel}>기간</Text>
-          <Text style={styles.periodValue}>
-            {period === '1d' ? '1일' : period === '5d' ? '5일' : period === '1mo' ? '1개월' : '3개월'}
+        <View style={styles.headerLeft}>
+          <Text style={styles.periodChip}>{periodLabel}</Text>
+          <Text style={[styles.changeText, { color: isUp ? C.up : C.down }]}>
+            {isUp ? '▲' : '▼'} {Math.abs(changePct).toFixed(2)}%
           </Text>
         </View>
-        <View style={styles.priceInfo}>
-          <Text style={styles.priceLabel}>최고</Text>
-          <Text style={[styles.priceValue, { color: '#00FF88' }]}>{formatPrice(maxPrice)}</Text>
-        </View>
-        <View style={styles.priceInfo}>
-          <Text style={styles.priceLabel}>최저</Text>
-          <Text style={[styles.priceValue, { color: '#FF4466' }]}>{formatPrice(minPrice)}</Text>
-        </View>
-        <View style={styles.priceInfo}>
-          <Text style={styles.priceLabel}>변동</Text>
-          <Text style={[styles.priceValue, { color: isPositive ? '#00FF88' : '#FF4466' }]}>
-            {isPositive ? '+' : ''}{formatPrice(Math.abs(priceChange))}
-          </Text>
+        <View style={styles.headerRight}>
+          <Text style={styles.statLabel}>고 <Text style={{ color: C.up }}>{fmtPrice(rawMax)}</Text></Text>
+          <Text style={[styles.statLabel, { marginLeft: 12 }]}>저 <Text style={{ color: C.down }}>{fmtPrice(rawMin)}</Text></Text>
         </View>
       </View>
 
       {/* MA 범례 */}
-      <View style={styles.maLegend}>
-        <View style={styles.maLegendItem}>
-          <View style={[styles.maLegendLine, { backgroundColor: '#FFD700' }]} />
-          <Text style={styles.maLegendText}>MA5</Text>
-        </View>
-        <View style={styles.maLegendItem}>
-          <View style={[styles.maLegendLine, { backgroundColor: '#00D9FF' }]} />
-          <Text style={styles.maLegendText}>MA20</Text>
-        </View>
-        {ma60Values && (
-          <View style={styles.maLegendItem}>
-            <View style={[styles.maLegendLine, { backgroundColor: '#FF88BB' }]} />
-            <Text style={styles.maLegendText}>MA60</Text>
+      <View style={styles.legend}>
+        {[['MA5', C.ma5], ['MA20', C.ma20], ...(ma60 ? [['MA60', C.ma60]] : [])].map(([label, color]) => (
+          <View key={label} style={styles.legendItem}>
+            <View style={[styles.legendLine, { backgroundColor: color }]} />
+            <Text style={styles.legendLabel}>{label}</Text>
           </View>
-        )}
-        <View style={[styles.maLegendItem, { marginLeft: 'auto' }]}>
-          <View style={[styles.maLegendBox, { backgroundColor: '#00FF8860' }]} />
-          <Text style={styles.maLegendText}>Vol+</Text>
-        </View>
-        <View style={styles.maLegendItem}>
-          <View style={[styles.maLegendBox, { backgroundColor: '#FF446660' }]} />
-          <Text style={styles.maLegendText}>Vol-</Text>
-        </View>
+        ))}
       </View>
 
       {/* 차트 */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 5 }}
-        style={styles.scrollView}
+        style={styles.scroll}
+        contentContainerStyle={{ paddingRight: 8 }}
       >
-        <Svg width={svgWidth} height={CHART_HEIGHT}>
+        <Svg width={svgW} height={TOTAL_H}>
           <Defs>
-            <LinearGradient id="gridGradient" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#3A4F6A" stopOpacity="0.3" />
-              <Stop offset="1" stopColor="#3A4F6A" stopOpacity="0.1" />
+            <LinearGradient id="volUp" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={C.up} stopOpacity="0.5" />
+              <Stop offset="1" stopColor={C.up} stopOpacity="0.1" />
+            </LinearGradient>
+            <LinearGradient id="volDn" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={C.down} stopOpacity="0.5" />
+              <Stop offset="1" stopColor={C.down} stopOpacity="0.1" />
             </LinearGradient>
           </Defs>
 
-          {/* 가격 영역 배경 */}
-          <Rect x={padding.left} y={PRICE_TOP} width={totalWidth} height={PRICE_AREA_HEIGHT}
-            fill="#1E2A3A" rx="8" />
+          {/* 차트 배경 */}
+          <Rect x={PAD.left} y={PRICE_TOP} width={totalW} height={PRICE_H} fill={C.chartBg} />
 
-          {/* Y축 그리드 라인 */}
-          {yTicks.map((tick, i) => (
-            <Line key={`grid-${i}`}
-              x1={padding.left} y1={tick.y} x2={padding.left + totalWidth} y2={tick.y}
-              stroke="#3A4F6A" strokeWidth="1" strokeDasharray="4,4" opacity="0.5" />
+          {/* 수평 그리드 */}
+          {yTicks.map((t, i) => (
+            <Line key={i} x1={PAD.left} y1={t.y} x2={PAD.left + totalW} y2={t.y}
+              stroke={C.grid} strokeWidth="1" />
           ))}
 
           {/* Y축 레이블 */}
-          {yTicks.map((tick, i) => (
-            <SvgText key={`ylabel-${i}`}
-              x={padding.left - 8} y={tick.y + 5}
-              fontSize="12" fill="#8A9BAE" textAnchor="end" fontWeight="600">
-              {formatPrice(tick.value)}
+          {yTicks.map((t, i) => (
+            <SvgText key={i} x={PAD.left - 6} y={t.y + 4}
+              fontSize="11" fill={C.textMid} textAnchor="end" fontFamily="monospace">
+              {fmtPrice(t.v)}
             </SvgText>
           ))}
 
-          {/* MA 선 (캔들 아래에 먼저 그림) */}
-          <Path d={maToPath(ma5Values)} stroke="#FFD700" strokeWidth="1.5" fill="none" opacity="0.9" />
-          <Path d={maToPath(ma20Values)} stroke="#00D9FF" strokeWidth="1.5" fill="none" opacity="0.9" />
-          {ma60Values && (
-            <Path d={maToPath(ma60Values)} stroke="#FF88BB" strokeWidth="1.5" fill="none" opacity="0.9" />
-          )}
+          {/* MA 선 */}
+          {maPath(ma5, C.ma5)}
+          {maPath(ma20, C.ma20)}
+          {ma60 && maPath(ma60, C.ma60)}
 
-          {/* 캔들스틱 (MA 위에 그림) */}
-          {data.map((item, index) => {
-            const x = padding.left + candleSpacing * index + candleSpacing / 2;
-            const openY = priceToY(item.open);
-            const closeY = priceToY(item.close);
-            const highY = priceToY(item.high);
-            const lowY = priceToY(item.low);
-            const isUp = item.close >= item.open;
-            const candleColor = isUp ? '#00FF88' : '#FF4466';
-            const candleHeight = Math.max(Math.abs(closeY - openY), 2);
-
+          {/* 캔들 심지 (몸통보다 먼저 그려야 몸통이 위에 올라옴) */}
+          {data.map((d, i) => {
+            const cx = PAD.left + i * candleStep + CANDLE_W / 2;
+            const color = d.close >= d.open ? C.up : C.down;
             return (
-              <View key={`candle-${index}`}>
-                <Line x1={x} y1={highY} x2={x} y2={lowY} stroke={candleColor} strokeWidth="2" />
-                <Rect
-                  x={x - candleWidth / 2} y={Math.min(openY, closeY)}
-                  width={candleWidth} height={candleHeight}
-                  fill={candleColor} stroke={candleColor} strokeWidth="1" rx="2" />
-              </View>
+              <Line key={`w${i}`}
+                x1={cx} y1={pY(d.high)} x2={cx} y2={pY(d.low)}
+                stroke={color} strokeWidth="1" />
             );
           })}
 
-          {/* 가격 영역 축 라인 */}
-          <Line x1={padding.left} y1={PRICE_TOP} x2={padding.left} y2={PRICE_BOTTOM}
-            stroke="#3A4F6A" strokeWidth="2" />
-          <Line x1={padding.left} y1={PRICE_BOTTOM} x2={padding.left + totalWidth} y2={PRICE_BOTTOM}
-            stroke="#3A4F6A" strokeWidth="2" />
+          {/* 캔들 몸통 */}
+          {data.map((d, i) => {
+            const cx = PAD.left + i * candleStep + CANDLE_W / 2;
+            const openY = pY(d.open);
+            const closeY = pY(d.close);
+            const color = d.close >= d.open ? C.up : C.down;
+            const bodyTop = Math.min(openY, closeY);
+            const bodyH = Math.max(Math.abs(closeY - openY), 1.5);
+            return (
+              <Rect key={`b${i}`}
+                x={cx - CANDLE_W / 2} y={bodyTop}
+                width={CANDLE_W} height={bodyH}
+                fill={color} rx="1" />
+            );
+          })}
 
-          {/* 거래량 영역 */}
-          {hasVolume && (
-            <>
-              {/* VOL 레이블 */}
-              <SvgText x={padding.left - 8} y={VOLUME_TOP + VOLUME_AREA_HEIGHT / 2 + 4}
-                fontSize="10" fill="#657786" textAnchor="end" fontWeight="600">
-                VOL
-              </SvgText>
+          {/* 좌측 축선 */}
+          <Line x1={PAD.left} y1={PRICE_TOP} x2={PAD.left} y2={PRICE_BOT}
+            stroke={C.axis} strokeWidth="1" />
+          <Line x1={PAD.left} y1={PRICE_BOT} x2={PAD.left + totalW} y2={PRICE_BOT}
+            stroke={C.axis} strokeWidth="1" />
 
-              {/* 거래량 바 */}
-              {data.map((item, index) => {
-                const x = padding.left + candleSpacing * index + candleSpacing / 2;
-                const isUp = item.close >= item.open;
-                const volH = Math.max(volToHeight(item.volume || 0), 1);
-                return (
-                  <Rect key={`vol-${index}`}
-                    x={x - candleWidth / 2}
-                    y={VOLUME_BOTTOM - volH}
-                    width={candleWidth}
-                    height={volH}
-                    fill={isUp ? '#00FF8870' : '#FF446670'}
-                    rx="1" />
-                );
-              })}
+          {/* 거래량 */}
+          {hasVol && data.map((d, i) => {
+            const cx = PAD.left + i * candleStep + CANDLE_W / 2;
+            const up = d.close >= d.open;
+            const h = Math.max((d.volume / maxVol) * VOL_H, 1);
+            return (
+              <Rect key={`v${i}`}
+                x={cx - CANDLE_W / 2} y={VOL_BOT - h}
+                width={CANDLE_W} height={h}
+                fill={up ? C.upVol : C.downVol}
+                rx="1" />
+            );
+          })}
 
-              {/* 거래량 영역 구분선 */}
-              <Line x1={padding.left} y1={VOLUME_TOP} x2={padding.left + totalWidth} y2={VOLUME_TOP}
-                stroke="#2A3A4A" strokeWidth="1" strokeDasharray="3,3" opacity="0.6" />
-              <Line x1={padding.left} y1={VOLUME_BOTTOM} x2={padding.left + totalWidth} y2={VOLUME_BOTTOM}
-                stroke="#3A4F6A" strokeWidth="1" />
-              <Line x1={padding.left} y1={VOLUME_TOP} x2={padding.left} y2={VOLUME_BOTTOM}
-                stroke="#3A4F6A" strokeWidth="2" />
-            </>
+          {/* 거래량 상단 구분선 */}
+          {hasVol && (
+            <Line x1={PAD.left} y1={VOL_TOP} x2={PAD.left + totalW} y2={VOL_TOP}
+              stroke={C.grid} strokeWidth="1" />
           )}
 
           {/* X축 레이블 */}
-          {xLabels.map((item) => {
-            const x = padding.left + candleSpacing * item.index + candleSpacing / 2;
-            return (
-              <SvgText key={`xlabel-${item.index}`}
-                x={x} y={CHART_HEIGHT - 15}
-                fontSize="11" fill="#8A9BAE" textAnchor="middle" fontWeight="500">
-                {item.time}
-              </SvgText>
-            );
-          })}
+          {xLabels.map((d) => (
+            <SvgText key={d.i}
+              x={PAD.left + d.i * candleStep + CANDLE_W / 2}
+              y={TOTAL_H - 8}
+              fontSize="10" fill={C.textMid} textAnchor="middle">
+              {d.time}
+            </SvgText>
+          ))}
         </Svg>
       </ScrollView>
-
-      {/* 범례 */}
-      <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendBox, { backgroundColor: '#00FF88' }]} />
-          <Text style={styles.legendText}>상승</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendBox, { backgroundColor: '#FF4466' }]} />
-          <Text style={styles.legendText}>하락</Text>
-        </View>
-        <Text style={styles.legendHint}>← 좌우로 스크롤하세요</Text>
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#1A1F3A',
-    borderRadius: 16,
-    padding: 16,
-    marginVertical: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+  wrap: {
+    backgroundColor: C.bg,
+    borderRadius: 12,
+    paddingTop: 14,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    marginVertical: 8,
+  },
+  empty: {
+    backgroundColor: C.bg,
+    borderRadius: 12,
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 8,
+  },
+  emptyText: {
+    color: C.textMid,
+    fontSize: 14,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: '#2A3F5A',
+    marginBottom: 10,
   },
-  priceInfo: {
-    alignItems: 'center',
-  },
-  priceLabel: {
-    fontSize: 11,
-    color: '#8A9BAE',
-    marginBottom: 5,
-    fontWeight: '500',
-  },
-  periodValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#00D9FF',
-  },
-  priceValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  maLegend: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 8,
-    paddingHorizontal: 2,
+    gap: 10,
   },
-  maLegendItem: {
+  periodChip: {
+    fontSize: 12,
+    color: C.text,
+    fontWeight: '700',
+    backgroundColor: '#1E2230',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  changeText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
   },
-  maLegendLine: {
-    width: 18,
-    height: 2,
-    borderRadius: 1,
-  },
-  maLegendBox: {
-    width: 10,
-    height: 10,
-    borderRadius: 2,
-  },
-  maLegendText: {
-    fontSize: 11,
-    color: '#8A9BAE',
-    fontWeight: '600',
-  },
-  scrollView: {
-    marginVertical: 6,
-  },
-  noDataText: {
-    color: '#8A9BAE',
-    fontSize: 15,
-    textAlign: 'center',
-    padding: 40,
+  statLabel: {
+    fontSize: 12,
+    color: C.textMid,
     fontWeight: '500',
   },
   legend: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 16,
-    gap: 20,
+    gap: 14,
+    marginBottom: 8,
+    paddingLeft: 2,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
   },
-  legendBox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
+  legendLine: {
+    width: 16,
+    height: 2,
+    borderRadius: 1,
   },
-  legendText: {
-    fontSize: 13,
-    color: '#B0BEC5',
+  legendLabel: {
+    fontSize: 10,
+    color: C.textMid,
     fontWeight: '600',
   },
-  legendHint: {
-    fontSize: 11,
-    color: '#6A7A8E',
-    fontStyle: 'italic',
-    marginLeft: 10,
+  scroll: {
+    marginTop: 2,
   },
 });

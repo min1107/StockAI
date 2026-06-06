@@ -8,7 +8,12 @@
 const axios = require('axios');
 const { setNews } = require('../../lib/newsCache');
 
-const KEYWORDS = ['코스피 증시', '코스닥 증시', '외국인 매매', '기관 순매수', '반도체 주가', '2차전지 주식'];
+const KEYWORDS = [
+  '코스피 증시', '코스닥 증시', '외국인 매매', '기관 순매수',
+  '반도체 주가', '2차전지 주식',
+  '방산 주식', '바이오 주가', '조선 수주', '로봇 주식',
+  '엔터 주가', 'K뷰티 주식',
+];
 
 function cleanTag(str) {
   return (str || '').replace(/<\/?b>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim();
@@ -61,7 +66,7 @@ module.exports = async (req, res) => {
     }
 
     allNews.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-    const news = allNews.slice(0, 15);
+    const news = allNews.slice(0, 20);
 
     await setNews({ items: news, count: news.length });
 

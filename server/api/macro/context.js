@@ -132,7 +132,7 @@ module.exports.getNewsForAI = async () => {
     const data = await getNews();
     if (!data || !data.items || data.items.length === 0) return null;
     const lines = [`[최신 시장 뉴스 — ${data.collectedAt ? new Date(data.collectedAt).toLocaleString('ko-KR') : ''}]`];
-    data.items.slice(0, 8).forEach((item, i) => {
+    data.items.slice(0, 12).forEach((item, i) => {
       lines.push(`${i + 1}. ${item.title}${item.summary ? ' — ' + item.summary.slice(0, 60) : ''}`);
     });
     return lines.join('\n');

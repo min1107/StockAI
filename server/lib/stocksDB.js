@@ -38,12 +38,18 @@ const fetchMarket = async (marketType, suffix, exchange) => {
   const iconv = require('iconv-lite');
   const html = iconv.decode(Buffer.from(resp.data), 'euc-kr');
   const rows = [];
-  const pattern = /<td[^>]*>\s*([^<\t\r\n]+?)\s*<\/td>\s*<td[^>]*>\s*(\d{6})\s*<\/td>/gi;
-  let m;
-  while ((m = pattern.exec(html)) !== null) {
-    const name = m[1].trim();
-    const code = m[2].trim();
-    if (name && code) rows.push({ symbol: code + suffix, name, code, exchange, type: 'EQUITY' });
+  // 구조: <tr><td>회사명</td><td>시장구분(유가/코스닥)</td><td style="mso-number-format...">종목코드</td>...
+  const trPattern = /<tr>([\s\S]*?)<\/tr>/gi;
+  let trMatch;
+  while ((trMatch = trPattern.exec(html)) !== null) {
+    const row = trMatch[1];
+    const nameMatch = row.match(/^[\s\S]*?<td>([^<\n\t]+?)<\/td>/i);
+    const codeMatch = row.match(/<td[^>]*mso-number-format[^>]*>\s*(\d{6})\s*<\/td>/i);
+    if (nameMatch && codeMatch) {
+      const name = nameMatch[1].trim();
+      const code = codeMatch[1].trim();
+      if (name && code) rows.push({ symbol: code + suffix, name, code, exchange, type: 'EQUITY' });
+    }
   }
   return rows;
 };

@@ -1,5 +1,24 @@
 const { KIS_BASE_URL, getAuthHeaders } = require('../../lib/kisAuth');
 const kisRequest = require('../../lib/kisRequest');
+const { Redis } = require('@upstash/redis');
+
+let redis = null;
+try {
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+  }
+} catch (_) {}
+
+// 장중 15분, 장 마감 후 30분 캐시
+const TTL = {
+  '1d':  15 * 60,
+  '5d':  20 * 60,
+  '1mo': 30 * 60,
+  '3mo': 30 * 60,
+};
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -8,8 +27,20 @@ module.exports = async (req, res) => {
     const { code, period = '1M' } = req.query;
     if (!code) return res.status(400).json({ error: '종목코드(code) 필요' });
 
-    const headers = await getAuthHeaders('FHKST01010400');
+    // 캐시 확인
+    const cacheKey = `stockai:chart:${code}:${period}`;
+    if (redis) {
+      try {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          const data = typeof cached === 'string' ? JSON.parse(cached) : cached;
+          res.setHeader('X-Cache', 'HIT');
+          return res.status(200).json(data);
+        }
+      } catch (_) {}
+    }
 
+    const headers = await getAuthHeaders('FHKST01010400');
     const response = await kisRequest('get',
       `${KIS_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-price`,
       {
@@ -23,9 +54,7 @@ module.exports = async (req, res) => {
       }
     );
 
-    const output = response.data.output;
-
-    const allData = output.map(item => ({
+    const allData = (response.data.output || []).map(item => ({
       time: `${item.stck_bsop_date.slice(4, 6)}/${item.stck_bsop_date.slice(6, 8)}`,
       open: parseInt(item.stck_oprc),
       high: parseInt(item.stck_hgpr),
@@ -39,19 +68,17 @@ module.exports = async (req, res) => {
       ).getTime() / 1000,
     })).reverse();
 
-    let filteredData;
-    if (period === '1d') {
-      filteredData = allData.slice(-1);
-    } else if (period === '5d') {
-      filteredData = allData.slice(-5);
-    } else if (period === '1mo') {
-      filteredData = allData.slice(-20);
-    } else if (period === '3mo') {
-      filteredData = allData.slice(-60);
-    } else {
-      filteredData = allData;
+    const sliceMap = { '1d': -1, '5d': -5, '1mo': -20, '3mo': -60 };
+    const filteredData = sliceMap[period] != null ? allData.slice(sliceMap[period]) : allData;
+
+    // 캐시 저장
+    if (redis && filteredData.length > 0) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(filteredData), { ex: TTL[period] || 1800 });
+      } catch (_) {}
     }
 
+    res.setHeader('X-Cache', 'MISS');
     res.status(200).json(filteredData);
   } catch (error) {
     console.error('KIS chart error:', error.message);

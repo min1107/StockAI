@@ -10,28 +10,49 @@ const { KIS_BASE_URL, getAuthHeaders } = require('../../lib/kisAuth');
 const kisRequest = require('../../lib/kisRequest');
 const { setSupply } = require('../../lib/supplyCache');
 
-// 수급 추적 대상: 시장 대표 + 수급 이상 자주 발생하는 종목
+// 수급 추적 대상: 시장 대표 대형주 + 추천풀 주요 중소형 강소기업
 const WATCH_LIST = [
+  // 대형주 (시장 방향 파악용)
   { code: '005930', name: '삼성전자' },
   { code: '000660', name: 'SK하이닉스' },
   { code: '005380', name: '현대차' },
   { code: '000270', name: '기아' },
-  { code: '012450', name: '한화에어로스페이스' },
-  { code: '329180', name: 'HD현대중공업' },
-  { code: '006400', name: '삼성SDI' },
-  { code: '051910', name: 'LG화학' },
-  { code: '196170', name: '알테오젠' },
   { code: '068270', name: '셀트리온' },
-  { code: '042700', name: '한미반도체' },
-  { code: '247540', name: '에코프로비엠' },
   { code: '005490', name: 'POSCO홀딩스' },
-  { code: '010140', name: '삼성중공업' },
-  { code: '352820', name: '하이브' },
   { code: '035420', name: 'NAVER' },
   { code: '105560', name: 'KB금융' },
-  { code: '259960', name: '크래프톤' },
+  // 방산/조선 (수급 이상 잦음)
+  { code: '012450', name: '한화에어로스페이스' },
+  { code: '329180', name: 'HD현대중공업' },
+  { code: '010140', name: '삼성중공업' },
+  { code: '079550', name: 'LIG넥스원' },
+  // 반도체 소부장 (추천풀 핵심)
+  { code: '042700', name: '한미반도체' },
+  { code: '058470', name: '리노공업' },
+  { code: '140860', name: '파크시스템스' },
+  { code: '098460', name: '고영' },
+  // 바이오/의료
+  { code: '196170', name: '알테오젠' },
+  { code: '214150', name: '클래시스' },
+  { code: '128940', name: '한미약품' },
+  // 2차전지
+  { code: '006400', name: '삼성SDI' },
+  { code: '247540', name: '에코프로비엠' },
+  // 화장품/K뷰티
   { code: '192820', name: '코스맥스' },
+  { code: '257720', name: '실리콘투' },
+  // 엔터/게임
+  { code: '352820', name: '하이브' },
+  { code: '259960', name: '크래프톤' },
+  // 로봇/AI
   { code: '277810', name: '레인보우로보틱스' },
+  // 금융
+  { code: '138040', name: '메리츠금융지주' },
+  // 식품 (방어주 수급 관찰)
+  { code: '271560', name: '오리온' },
+  // 철강/소재
+  { code: '010130', name: '고려아연' },
+  { code: '298050', name: '효성첨단소재' },
 ];
 
 async function fetchInvestor(code) {
