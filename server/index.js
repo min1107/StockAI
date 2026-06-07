@@ -30,6 +30,8 @@ router.all('/ai/analyze',      require('./api/ai/analyze'));
 router.all('/ai/recommend',    require('./api/ai/recommend'));
 router.all('/ai/portfolio',    require('./api/ai/portfolio'));
 router.all('/ai/chat',         require('./api/ai/chat'));
+router.all('/ai/ocr-portfolio', require('./api/ai/ocr-portfolio'));
+router.all('/market/opportunity', require('./api/market/opportunity'));
 router.all('/stocks/search',   require('./api/stocks/search'));
 router.all('/news',            require('./api/news'));
 router.all('/macro/collect',   require('./api/macro/collect'));
