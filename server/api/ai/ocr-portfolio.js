@@ -1,21 +1,25 @@
 /**
  * 포트폴리오 스크린샷 OCR
- * - Gemini Vision으로 이미지에서 종목코드/종목명/수량/평균매입가 추출
+ * - FormData multipart로 이미지 수신 (base64 JSON 방식 대신)
+ * - Gemini Vision으로 종목코드/종목명/수량/평균매입가 추출
  */
 
 const axios = require('axios');
+const multer = require('multer');
 
-module.exports = async (req, res) => {
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+});
 
-  const { imageBase64, mimeType = 'image/jpeg' } = req.body;
-  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 필요' });
+const runMulter = (req, res) =>
+  new Promise((resolve, reject) => {
+    upload.single('image')(req, res, (err) => {
+      if (err) reject(err); else resolve();
+    });
+  });
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 없음' });
-
-  const prompt = `이 이미지는 한국 증권사 앱의 보유종목 화면입니다.
+const PROMPT = `이 이미지는 한국 증권사 앱의 보유종목 화면입니다.
 이미지에서 보유 종목 정보를 추출해주세요.
 
 반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
@@ -36,13 +40,31 @@ module.exports = async (req, res) => {
 - 인식 불가한 종목은 제외
 - ETF도 포함`;
 
+module.exports = async (req, res) => {
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 없음' });
+
+  try {
+    await runMulter(req, res);
+  } catch (err) {
+    return res.status(400).json({ error: '파일 업로드 실패: ' + err.message });
+  }
+
+  if (!req.file) return res.status(400).json({ error: '이미지 파일이 없습니다' });
+
+  const imageBase64 = req.file.buffer.toString('base64');
+  const mimeType = req.file.mimetype || 'image/jpeg';
+
   try {
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         contents: [{
           parts: [
-            { text: prompt },
+            { text: PROMPT },
             { inline_data: { mime_type: mimeType, data: imageBase64 } },
           ],
         }],
@@ -52,10 +74,8 @@ module.exports = async (req, res) => {
     );
 
     const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-    // JSON 추출 (마크다운 코드블록 제거)
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return res.status(422).json({ error: '종목을 인식하지 못했습니다.', raw });
+    if (!jsonMatch) return res.status(422).json({ error: '종목을 인식하지 못했습니다.' });
 
     const parsed = JSON.parse(jsonMatch[0]);
     const stocks = (parsed.stocks || []).filter(s => s.name && s.shares > 0 && s.avgPrice > 0);

@@ -756,8 +756,7 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.5,
-      base64: true,
+      quality: 0.7,
     });
     if (result.canceled) return;
     setOcrImage(result.assets[0]);
@@ -765,19 +764,23 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
 
   // ── 이미지 OCR 실행 ──
   const handleOCR = async () => {
-    if (!ocrImage?.base64) return;
+    if (!ocrImage?.uri) return;
     setOcrLoading(true);
     setOcrError('');
     try {
-      const mimeType = ocrImage.mimeType || 'image/jpeg';
+      const formData = new FormData();
+      formData.append('image', {
+        uri: ocrImage.uri,
+        type: ocrImage.mimeType || 'image/jpeg',
+        name: 'screenshot.jpg',
+      });
       const response = await fetch(`${serverUrl}/api/ai/ocr-portfolio`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: ocrImage.base64, mimeType }),
+        body: formData,
       });
       const text = await response.text();
       let data;
-      try { data = JSON.parse(text); } catch { throw new Error(`서버 오류 (${response.status}): 이미지가 너무 크거나 서버 문제`); }
+      try { data = JSON.parse(text); } catch { throw new Error(`서버 오류 (${response.status})`); }
       if (!response.ok) throw new Error(data.error || '인식 실패');
       if (!data.stocks || data.stocks.length === 0) {
         setOcrError('종목을 인식하지 못했습니다. 더 선명한 스크린샷을 사용해보세요.');
