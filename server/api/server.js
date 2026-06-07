@@ -11,7 +11,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // 핸들러 로드
 const kisPrice = require('./kis/price');

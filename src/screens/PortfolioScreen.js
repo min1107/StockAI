@@ -756,7 +756,7 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.85,
+      quality: 0.5,
       base64: true,
     });
     if (result.canceled) return;
@@ -775,7 +775,9 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: ocrImage.base64, mimeType }),
       });
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error(`서버 오류 (${response.status}): 이미지가 너무 크거나 서버 문제`); }
       if (!response.ok) throw new Error(data.error || '인식 실패');
       if (!data.stocks || data.stocks.length === 0) {
         setOcrError('종목을 인식하지 못했습니다. 더 선명한 스크린샷을 사용해보세요.');
