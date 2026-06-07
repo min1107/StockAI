@@ -30,15 +30,15 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { imageBase64, mimeType = 'image/jpeg' } = req.body;
-  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 필요' });
-
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 없음' });
 
+  const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 필요' });
+
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         contents: [{
           parts: [
@@ -60,7 +60,13 @@ module.exports = async (req, res) => {
 
     res.status(200).json({ stocks });
   } catch (error) {
-    console.error('OCR 실패:', error.message);
-    res.status(500).json({ error: '이미지 인식 실패: ' + error.message });
+    const detail = error.response?.data?.error;
+    console.error('OCR 실패:', error.message, JSON.stringify(detail || {}));
+    res.status(500).json({
+      error: '이미지 인식 실패: ' + error.message,
+      geminiStatus: error.response?.status,
+      geminiMessage: detail?.message,
+      geminiReason: detail?.status,
+    });
   }
 };
