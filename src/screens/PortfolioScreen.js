@@ -1,11 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -412,8 +414,8 @@ const parsePortfolioCSV = (text) => {
 };
 
 // ── 종목 추가 모달 ─────────────────────────────────────────────────
-function AddHoldingModal({ visible, onClose, onAdd }) {
-  const [mode, setMode] = useState(null); // null=선택화면 | 'manual' | 'csv'
+function AddHoldingModal({ visible, onClose, onAdd, serverUrl }) {
+  const [mode, setMode] = useState(null); // null=선택화면 | 'manual' | 'csv' | 'image'
 
   // 직접입력 state
   const [stockCode, setStockCode] = useState('');
@@ -423,15 +425,21 @@ function AddHoldingModal({ visible, onClose, onAdd }) {
   const [loading, setLoading] = useState(false);
 
   // CSV state
-  const [csvItems, setCsvItems] = useState([]); // 파싱된 종목 목록
+  const [csvItems, setCsvItems] = useState([]);
   const [csvLoading, setCsvLoading] = useState(false);
   const [csvError, setCsvError] = useState('');
-  const [selected, setSelected] = useState({}); // { code: true/false }
+  const [selected, setSelected] = useState({});
+
+  // 이미지 OCR state
+  const [ocrImage, setOcrImage] = useState(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState('');
 
   const reset = () => {
     setMode(null);
     setStockCode(''); setStockName(''); setShares(''); setAvgPrice('');
     setCsvItems([]); setCsvError(''); setSelected({});
+    setOcrImage(null); setOcrError('');
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -454,6 +462,59 @@ function AddHoldingModal({ visible, onClose, onAdd }) {
       Alert.alert('오류', e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── 이미지 선택 ──
+  const handlePickImage = async () => {
+    setOcrError('');
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setOcrError('사진 접근 권한이 필요합니다.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85,
+      base64: true,
+    });
+    if (result.canceled) return;
+    setOcrImage(result.assets[0]);
+  };
+
+  // ── 이미지 OCR 실행 ──
+  const handleOCR = async () => {
+    if (!ocrImage?.base64) return;
+    setOcrLoading(true);
+    setOcrError('');
+    try {
+      const mimeType = ocrImage.mimeType || 'image/jpeg';
+      const response = await fetch(`${serverUrl}/api/ai/ocr-portfolio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: ocrImage.base64, mimeType }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '인식 실패');
+      if (!data.stocks || data.stocks.length === 0) {
+        setOcrError('종목을 인식하지 못했습니다. 더 선명한 스크린샷을 사용해보세요.');
+        return;
+      }
+      // 인식된 종목을 CSV 결과와 동일한 플로우로 처리
+      setCsvItems(data.stocks.map(s => ({
+        code: s.code || '',
+        name: s.name,
+        shares: s.shares,
+        avgPrice: s.avgPrice,
+      })));
+      const sel = {};
+      data.stocks.forEach(s => { sel[s.code || s.name] = true; });
+      setSelected(sel);
+      setMode('csv'); // 확인/선택 화면 재사용
+    } catch (e) {
+      setOcrError('오류: ' + e.message);
+    } finally {
+      setOcrLoading(false);
     }
   };
 
@@ -537,7 +598,16 @@ function AddHoldingModal({ visible, onClose, onAdd }) {
                 <Text style={addStyles.optionArrow}>›</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[addStyles.optionBtn, { borderColor: '#00D97E40' }]} onPress={() => setMode('csv')}>
+              <TouchableOpacity style={[addStyles.optionBtn, { borderColor: '#A78BFA40', marginTop: 10 }]} onPress={() => setMode('image')}>
+                <Text style={addStyles.optionIcon}>📸</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[addStyles.optionTitle, { color: '#A78BFA' }]}>스크린샷으로 가져오기</Text>
+                  <Text style={addStyles.optionDesc}>증권사 앱 보유종목 화면 캡처 → AI 자동 인식</Text>
+                </View>
+                <Text style={addStyles.optionArrow}>›</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[addStyles.optionBtn, { borderColor: '#00D97E40', marginTop: 10 }]} onPress={() => setMode('csv')}>
                 <Text style={addStyles.optionIcon}>📂</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={[addStyles.optionTitle, { color: '#00D97E' }]}>파일로 가져오기</Text>
@@ -547,10 +617,10 @@ function AddHoldingModal({ visible, onClose, onAdd }) {
               </TouchableOpacity>
 
               <View style={addStyles.hintBox}>
-                <Text style={addStyles.hintText}>💡 CSV 가져오기 방법</Text>
+                <Text style={addStyles.hintText}>💡 스크린샷 방법</Text>
                 <Text style={addStyles.hintDesc}>
-                  증권사 MTS → 보유종목 → 내보내기/공유{'\n'}
-                  키움·미래에셋·삼성·NH·KB증권 등 지원
+                  증권사 앱 → 보유종목 화면 → 캡처{'\n'}
+                  AI가 종목명·수량·평단가를 자동으로 읽습니다
                 </Text>
               </View>
 
@@ -607,6 +677,49 @@ function AddHoldingModal({ visible, onClose, onAdd }) {
                   {loading ? <ActivityIndicator color="#0A0E27" /> : <Text style={styles.addBtnText}>추가하기</Text>}
                 </TouchableOpacity>
               </View>
+            </>
+          )}
+
+          {/* ── 이미지 OCR ── */}
+          {mode === 'image' && (
+            <>
+              <TouchableOpacity onPress={() => { setMode(null); setOcrImage(null); setOcrError(''); }} style={addStyles.backBtn}>
+                <Text style={addStyles.backText}>‹ 뒤로</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>스크린샷으로 가져오기</Text>
+
+              <TouchableOpacity style={[addStyles.uploadArea, ocrImage && { borderColor: '#A78BFA' }]} onPress={handlePickImage}>
+                {ocrImage ? (
+                  <Image source={{ uri: ocrImage.uri }} style={{ width: '100%', height: 180, borderRadius: 10 }} resizeMode="contain" />
+                ) : (
+                  <>
+                    <Text style={addStyles.uploadIcon}>📸</Text>
+                    <Text style={addStyles.uploadTitle}>사진 선택</Text>
+                    <Text style={addStyles.uploadDesc}>
+                      증권사 앱 보유종목 화면을{'\n'}캡처한 스크린샷을 선택하세요
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {ocrError ? <Text style={addStyles.csvError}>{ocrError}</Text> : null}
+
+              {ocrImage && (
+                <TouchableOpacity
+                  style={[styles.addBtn, { marginTop: 12, backgroundColor: '#A78BFA' }]}
+                  onPress={handleOCR}
+                  disabled={ocrLoading}
+                >
+                  {ocrLoading
+                    ? <ActivityIndicator color="#0A0E27" />
+                    : <Text style={styles.addBtnText}>AI 종목 인식 시작</Text>}
+                </TouchableOpacity>
+              )}
+              {!ocrImage && (
+                <TouchableOpacity style={[styles.addBtn, { marginTop: 12, backgroundColor: '#A78BFA' }]} onPress={handlePickImage}>
+                  <Text style={styles.addBtnText}>사진 선택하기</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
 
@@ -1025,6 +1138,7 @@ export default function PortfolioScreen({ navigation }) {
         visible={showAddModal}
         onClose={() => setShowAddModal(false)}
         onAdd={handleAdd}
+        serverUrl="https://server-nine-alpha-95.vercel.app"
       />
 
       {/* AI 채팅 FAB */}
