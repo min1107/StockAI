@@ -1,14 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import * as ImageManipulator from 'expo-image-manipulator';
-import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -24,7 +21,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import AIChatModal from '../components/AIChatModal';
 import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, deleteAccount } from '../services/portfolioAPI';
-import { fetchStockDetail } from '../services/stockAPI';
+import { fetchStockDetail, searchStocks } from '../services/stockAPI';
 import { analyzePortfolio } from '../services/groqAPI';
 import { loadNotifSettings, checkPnlAlert, checkBigMovementAlert } from '../services/notificationService';
 
@@ -642,6 +639,64 @@ function CreateAccountModal({ visible, onClose, onCreate }) {
   );
 }
 
+// ── 붙여넣기 텍스트 파서 ────────────────────────────────────────────
+// 휴대폰 OCR(텍스트 인식)로 변환한 증권사 보유종목 텍스트를 유연하게 파싱.
+// 형식이 제각각이라 "최선 추측" 후, 확인 화면에서 사용자가 직접 수정하는 것을 전제로 함.
+const NOISE_RE = /(보유종목|평가금액|평가손익|수익률|평균단가|평균매입|매입가|현재가|보유수량|예수금|출금가능|총\s*평가|총\s*매입|합계|계좌|구분|종목명|수량|단가|주문|체결|미체결|관심|D\+|원화|외화)/;
+
+const parsePastedText = (text) => {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const items = [];
+  let cur = null;
+
+  const flush = () => {
+    if (!cur || !cur.name) { cur = null; return; }
+    const nums = cur.nums;
+    // 수량: "주" 태그가 붙은 숫자 우선
+    let shares = cur.sharesTagged;
+    // 단가: 100~5,000,000 범위의 가격성 숫자
+    const prices = nums.filter(n => n >= 100 && n <= 5000000 && Number.isFinite(n));
+    if (shares == null) {
+      const smalls = nums.filter(n => n >= 1 && n <= 100000 && Number.isInteger(n));
+      if (smalls.length) shares = Math.min(...smalls);
+    }
+    let avgPrice = 0;
+    if (prices.length) {
+      const sorted = prices.slice().sort((a, b) => a - b);
+      // 가격이 여러 개면 중앙값(보통 평단/현재가 사이) 추정
+      avgPrice = sorted[Math.floor(sorted.length / 2)] || sorted[0];
+    }
+    items.push({ code: cur.code || '', name: cur.name, shares: shares || 0, avgPrice: avgPrice || 0 });
+    cur = null;
+  };
+
+  for (const line of lines) {
+    const codeMatch = line.match(/\b(\d{6})\b/);
+    const nameChars = line.replace(/[\d.,%+\-주원\s()]/g, '');
+    const looksName = /[가-힣]{2,}|[A-Za-z]{2,}/.test(line) && nameChars.length >= 2 && !NOISE_RE.test(line);
+
+    if (looksName) {
+      flush();
+      // 종목명: 숫자/기호 떼고 한글·영문·공백만
+      const name = (line.match(/[가-힣A-Za-z][가-힣A-Za-z0-9&\s]*[가-힣A-Za-z0-9]/) || [line])[0].trim();
+      cur = { name, nums: [], code: codeMatch ? codeMatch[1] : '', sharesTagged: null };
+    }
+    if (!cur) continue;
+
+    const sharesM = line.match(/(\d[\d,]*)\s*주/);
+    if (sharesM) cur.sharesTagged = parseInt(sharesM[1].replace(/,/g, ''));
+
+    const tokens = line.match(/\d[\d,]*(?:\.\d+)?/g) || [];
+    for (const t of tokens) {
+      if (t === cur.code) continue;
+      const n = parseFloat(t.replace(/,/g, ''));
+      if (!isNaN(n)) cur.nums.push(n);
+    }
+  }
+  flush();
+  return items;
+};
+
 // ── CSV 파싱 유틸 ──────────────────────────────────────────────────
 const parsePortfolioCSV = (text) => {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -688,7 +743,7 @@ const parsePortfolioCSV = (text) => {
 };
 
 // ── 종목 추가 모달 ─────────────────────────────────────────────────
-function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], defaultAccountId = null, onCreateAccount }) {
+function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccountId = null, onCreateAccount }) {
   const [mode, setMode] = useState(null); // null=선택화면 | 'manual' | 'csv' | 'image'
 
   // 직접입력 state
@@ -704,10 +759,10 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
   const [csvError, setCsvError] = useState('');
   const [selected, setSelected] = useState({});
 
-  // 이미지 OCR state
-  const [ocrImage, setOcrImage] = useState(null);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrError, setOcrError] = useState('');
+  // 텍스트 붙여넣기 state
+  const [pasteText, setPasteText] = useState('');
+  const [pasteRows, setPasteRows] = useState([]); // [{_id, name, code, shares, avgPrice, include}]
+  const [pasteBusy, setPasteBusy] = useState(false);
 
   // 계좌 선택 state
   const [targetAccountId, setTargetAccountId] = useState(null);
@@ -720,7 +775,7 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
     setMode(null);
     setStockCode(''); setStockName(''); setShares(''); setAvgPrice('');
     setCsvItems([]); setCsvError(''); setSelected({});
-    setOcrImage(null); setOcrError('');
+    setPasteText(''); setPasteRows([]);
     setTargetAccountId(null);
   };
 
@@ -744,66 +799,6 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
       Alert.alert('오류', e.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ── 이미지 선택 ──
-  const handlePickImage = async () => {
-    setOcrError('');
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      setOcrError('사진 접근 권한이 필요합니다.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 1,
-    });
-    if (result.canceled) return;
-
-    // 1024px로 리사이즈 + 50% 압축 → base64 (400KB 이하로 줄어듦)
-    const compressed = await ImageManipulator.manipulateAsync(
-      result.assets[0].uri,
-      [{ resize: { width: 1024 } }],
-      { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-    );
-    setOcrImage({ uri: compressed.uri, base64: compressed.base64, mimeType: 'image/jpeg' });
-  };
-
-  // ── 이미지 OCR 실행 ──
-  const handleOCR = async () => {
-    if (!ocrImage?.base64) return;
-    setOcrLoading(true);
-    setOcrError('');
-    try {
-      const response = await fetch(`${serverUrl}/api/ai/ocr-portfolio`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: ocrImage.base64, mimeType: 'image/jpeg' }),
-      });
-      const text = await response.text();
-      let data;
-      try { data = JSON.parse(text); } catch { throw new Error(`서버 오류 (${response.status})`); }
-      if (!response.ok) throw new Error(data.error || '인식 실패');
-      if (!data.stocks || data.stocks.length === 0) {
-        setOcrError('종목을 인식하지 못했습니다. 더 선명한 스크린샷을 사용해보세요.');
-        return;
-      }
-      // 인식된 종목을 CSV 결과와 동일한 플로우로 처리
-      setCsvItems(data.stocks.map(s => ({
-        code: s.code || '',
-        name: s.name,
-        shares: s.shares,
-        avgPrice: s.avgPrice,
-      })));
-      const sel = {};
-      data.stocks.forEach(s => { sel[s.code || s.name] = true; });
-      setSelected(sel);
-      setMode('csv'); // 확인/선택 화면 재사용
-    } catch (e) {
-      setOcrError('오류: ' + e.message);
-    } finally {
-      setOcrLoading(false);
     }
   };
 
@@ -863,6 +858,60 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
     setLoading(false);
     Alert.alert('완료', `${added}개 종목이 추가되었습니다.`);
     reset(); onClose();
+  };
+
+  // ── 붙여넣기: 텍스트 분석 ──
+  const handleParsePaste = () => {
+    const parsed = parsePastedText(pasteText);
+    if (parsed.length === 0) {
+      Alert.alert('인식 실패', '종목을 찾지 못했습니다.\n종목명이 한 줄에 하나씩 들어가도록 붙여넣어 보세요.');
+      return;
+    }
+    setPasteRows(parsed.map((r, i) => ({ ...r, _id: i, include: true })));
+  };
+
+  // ── 붙여넣기: 행 편집 ──
+  const editRow = (id, field, value) => {
+    setPasteRows(prev => prev.map(r => r._id === id ? { ...r, [field]: value } : r));
+  };
+  const toggleRow = (id) => {
+    setPasteRows(prev => prev.map(r => r._id === id ? { ...r, include: !r.include } : r));
+  };
+  const removeRow = (id) => {
+    setPasteRows(prev => prev.filter(r => r._id !== id));
+  };
+
+  // ── 붙여넣기: 최종 추가 (코드 없으면 검색으로 해결) ──
+  const handlePasteAdd = async () => {
+    const rows = pasteRows.filter(r => r.include);
+    if (rows.length === 0) { Alert.alert('선택 없음', '추가할 종목을 선택해주세요.'); return; }
+    setPasteBusy(true);
+    let added = 0;
+    const failed = [];
+    for (const r of rows) {
+      const name = (r.name || '').trim();
+      const sharesNum = parseInt(String(r.shares).replace(/,/g, '')) || 0;
+      const priceNum = parseInt(String(r.avgPrice).replace(/,/g, '')) || 0;
+      if (!name || sharesNum <= 0 || priceNum <= 0) { failed.push(name || '(이름없음)'); continue; }
+
+      let code = (r.code || '').trim();
+      if (!/^\d{6}$/.test(code)) {
+        try {
+          const results = await searchStocks(name);
+          const hit = results?.find(x => /^\d{6}$/.test(x.code)) || results?.[0];
+          if (hit?.code && /^\d{6}$/.test(hit.code)) code = hit.code;
+        } catch {}
+      }
+      if (!/^\d{6}$/.test(code)) { failed.push(name); continue; }
+
+      try { await onAdd(code, name, sharesNum, priceNum, targetAccountId); added++; }
+      catch { failed.push(name); }
+    }
+    setPasteBusy(false);
+    const msg = `${added}개 종목이 추가되었습니다.` +
+      (failed.length ? `\n\n실패 ${failed.length}개: ${failed.join(', ')}\n(종목명을 정확히 고쳐 다시 시도하세요)` : '');
+    Alert.alert('완료', msg);
+    if (added > 0) { reset(); onClose(); }
   };
 
   return (
@@ -926,11 +975,11 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
                 <Text style={addStyles.optionArrow}>›</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[addStyles.optionBtn, { borderColor: '#A78BFA40', marginTop: 10 }]} onPress={() => setMode('image')}>
-                <Text style={addStyles.optionIcon}>📸</Text>
+              <TouchableOpacity style={[addStyles.optionBtn, { borderColor: '#A78BFA40', marginTop: 10 }]} onPress={() => setMode('paste')}>
+                <Text style={addStyles.optionIcon}>📋</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={[addStyles.optionTitle, { color: '#A78BFA' }]}>스크린샷으로 가져오기</Text>
-                  <Text style={addStyles.optionDesc}>증권사 앱 보유종목 화면 캡처 → AI 자동 인식</Text>
+                  <Text style={[addStyles.optionTitle, { color: '#A78BFA' }]}>텍스트 붙여넣기 (추천)</Text>
+                  <Text style={addStyles.optionDesc}>증권사 화면을 휴대폰으로 텍스트 인식 → 복사 → 붙여넣기</Text>
                 </View>
                 <Text style={addStyles.optionArrow}>›</Text>
               </TouchableOpacity>
@@ -945,10 +994,12 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
               </TouchableOpacity>
 
               <View style={addStyles.hintBox}>
-                <Text style={addStyles.hintText}>💡 스크린샷 방법</Text>
+                <Text style={addStyles.hintText}>💡 텍스트 붙여넣기 방법</Text>
                 <Text style={addStyles.hintDesc}>
-                  증권사 앱 → 보유종목 화면 → 캡처{'\n'}
-                  AI가 종목명·수량·평단가를 자동으로 읽습니다
+                  ① 증권사 앱 보유종목 화면을 캡처{'\n'}
+                  ② 사진 앱에서 사진 열고 텍스트 길게 눌러 전체 선택·복사{'\n'}
+                  {'   '}(아이폰: 텍스트 인식 / 안드로이드: 구글 렌즈){'\n'}
+                  ③ 여기 "텍스트 붙여넣기"에 붙여넣기
                 </Text>
               </View>
 
@@ -1017,45 +1068,93 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
             </>
           )}
 
-          {/* ── 이미지 OCR ── */}
-          {mode === 'image' && (
+          {/* ── 텍스트 붙여넣기 ── */}
+          {mode === 'paste' && (
             <>
-              <TouchableOpacity onPress={() => { setMode(null); setOcrImage(null); setOcrError(''); }} style={addStyles.backBtn}>
+              <TouchableOpacity onPress={() => { setMode(null); setPasteText(''); setPasteRows([]); }} style={addStyles.backBtn}>
                 <Text style={addStyles.backText}>‹ 뒤로</Text>
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>스크린샷으로 가져오기</Text>
+              <Text style={styles.modalTitle}>텍스트 붙여넣기</Text>
 
-              <TouchableOpacity style={[addStyles.uploadArea, ocrImage && { borderColor: '#A78BFA' }]} onPress={handlePickImage}>
-                {ocrImage ? (
-                  <Image source={{ uri: ocrImage.uri }} style={{ width: '100%', height: 180, borderRadius: 10 }} resizeMode="contain" />
-                ) : (
-                  <>
-                    <Text style={addStyles.uploadIcon}>📸</Text>
-                    <Text style={addStyles.uploadTitle}>사진 선택</Text>
-                    <Text style={addStyles.uploadDesc}>
-                      증권사 앱 보유종목 화면을{'\n'}캡처한 스크린샷을 선택하세요
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {ocrError ? <Text style={addStyles.csvError}>{ocrError}</Text> : null}
-
-              {ocrImage && (
-                <TouchableOpacity
-                  style={[styles.addBtn, { marginTop: 12, backgroundColor: '#A78BFA' }]}
-                  onPress={handleOCR}
-                  disabled={ocrLoading}
-                >
-                  {ocrLoading
-                    ? <ActivityIndicator color="#0A0E27" />
-                    : <Text style={styles.addBtnText}>AI 종목 인식 시작</Text>}
-                </TouchableOpacity>
-              )}
-              {!ocrImage && (
-                <TouchableOpacity style={[styles.addBtn, { marginTop: 12, backgroundColor: '#A78BFA' }]} onPress={handlePickImage}>
-                  <Text style={styles.addBtnText}>사진 선택하기</Text>
-                </TouchableOpacity>
+              {pasteRows.length === 0 ? (
+                <>
+                  <Text style={addStyles.pasteGuide}>
+                    증권사 보유종목 화면을 휴대폰으로 텍스트 인식(아이폰)·구글렌즈(안드로이드)한 뒤,
+                    복사한 내용을 아래에 붙여넣고 "분석"을 누르세요.
+                  </Text>
+                  <TextInput
+                    style={addStyles.pasteInput}
+                    placeholder={"예시)\n삼성전자 100주 72,000\nSK하이닉스 50주 130,000\n..."}
+                    placeholderTextColor="#4A5568"
+                    value={pasteText}
+                    onChangeText={setPasteText}
+                    multiline
+                    textAlignVertical="top"
+                  />
+                  <TouchableOpacity
+                    style={[styles.addBtn, { marginTop: 12, backgroundColor: '#A78BFA' }]}
+                    onPress={handleParsePaste}
+                  >
+                    <Text style={styles.addBtnText}>분석하기</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={addStyles.parsedCount}>
+                    {pasteRows.length}개 인식됨 — 틀린 부분은 직접 고치세요
+                  </Text>
+                  <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                    {pasteRows.map(row => (
+                      <View key={row._id} style={[addStyles.pasteRow, !row.include && { opacity: 0.4 }]}>
+                        <TouchableOpacity onPress={() => toggleRow(row._id)} style={[addStyles.checkbox, row.include && addStyles.checkboxOn]}>
+                          {row.include && <Text style={addStyles.checkmark}>✓</Text>}
+                        </TouchableOpacity>
+                        <View style={{ flex: 1, gap: 6 }}>
+                          <TextInput
+                            style={addStyles.pasteCellName}
+                            value={row.name}
+                            onChangeText={t => editRow(row._id, 'name', t)}
+                            placeholder="종목명"
+                            placeholderTextColor="#4A5568"
+                          />
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <TextInput
+                              style={addStyles.pasteCellNum}
+                              value={String(row.shares || '')}
+                              onChangeText={t => editRow(row._id, 'shares', t.replace(/[^0-9]/g, ''))}
+                              placeholder="수량"
+                              placeholderTextColor="#4A5568"
+                              keyboardType="numeric"
+                            />
+                            <TextInput
+                              style={addStyles.pasteCellNum}
+                              value={String(row.avgPrice || '')}
+                              onChangeText={t => editRow(row._id, 'avgPrice', t.replace(/[^0-9]/g, ''))}
+                              placeholder="평단가"
+                              placeholderTextColor="#4A5568"
+                              keyboardType="numeric"
+                            />
+                          </View>
+                        </View>
+                        <TouchableOpacity onPress={() => removeRow(row._id)} style={addStyles.pasteDel}>
+                          <Text style={{ color: '#FF4466', fontSize: 18 }}>×</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                  <View style={styles.modalBtnRow}>
+                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setPasteRows([])}>
+                      <Text style={styles.cancelBtnText}>다시</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.addBtn} onPress={handlePasteAdd} disabled={pasteBusy}>
+                      {pasteBusy
+                        ? <ActivityIndicator color="#0A0E27" />
+                        : <Text style={styles.addBtnText}>
+                            {pasteRows.filter(r => r.include).length}개 추가
+                          </Text>}
+                    </TouchableOpacity>
+                  </View>
+                </>
               )}
             </>
           )}
@@ -1180,6 +1279,30 @@ const addStyles = StyleSheet.create({
   csvCode: { fontSize: 11, color: '#6B7280', marginTop: 2 },
   csvShares: { fontSize: 13, color: '#FFFFFF', fontWeight: '600' },
   csvPrice: { fontSize: 11, color: '#6B7280', marginTop: 2 },
+
+  pasteGuide: { fontSize: 12, color: '#8892A4', lineHeight: 18, marginBottom: 12 },
+  pasteInput: {
+    minHeight: 160, maxHeight: 240,
+    backgroundColor: '#0A0E27', borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: '#252A47',
+    color: '#FFFFFF', fontSize: 14, lineHeight: 20,
+  },
+  pasteRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 10, borderRadius: 10, marginBottom: 8,
+    backgroundColor: '#0A0E27', borderWidth: 1, borderColor: '#252A47',
+  },
+  pasteCellName: {
+    backgroundColor: '#12172E', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7,
+    color: '#FFFFFF', fontSize: 14, fontWeight: '600',
+    borderWidth: 1, borderColor: '#252A47',
+  },
+  pasteCellNum: {
+    flex: 1, backgroundColor: '#12172E', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7,
+    color: '#FFFFFF', fontSize: 13,
+    borderWidth: 1, borderColor: '#252A47',
+  },
+  pasteDel: { padding: 4 },
 });
 
 // ── AI 진단 카드 ───────────────────────────────────────────────────
@@ -1535,7 +1658,6 @@ export default function PortfolioScreen({ navigation }) {
         visible={showAddModal}
         onClose={() => setShowAddModal(false)}
         onAdd={handleAdd}
-        serverUrl="https://server-nine-alpha-95.vercel.app"
         accounts={accounts}
         defaultAccountId={selectedAccountId === 'all' ? null : selectedAccountId}
         onCreateAccount={handleCreateAccount}
