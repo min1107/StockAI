@@ -11,18 +11,23 @@ export const getHoldings = async (userId) => {
   return data;
 };
 
-// 종목 추가 (이미 있으면 평단가/수량 업데이트)
-export const addHolding = async (userId, stockCode, stockName, shares, avgPrice) => {
-  // 동일 종목 있는지 확인
-  const { data: existing } = await supabase
+// 종목 추가 (같은 계좌 내 동일 종목이면 평단가/수량 업데이트)
+export const addHolding = async (userId, stockCode, stockName, shares, avgPrice, accountId = null) => {
+  let query = supabase
     .from('portfolios')
     .select('*')
     .eq('user_id', userId)
-    .eq('stock_code', stockCode)
-    .single();
+    .eq('stock_code', stockCode);
+
+  if (accountId) {
+    query = query.eq('account_id', accountId);
+  } else {
+    query = query.is('account_id', null);
+  }
+
+  const { data: existing } = await query.single();
 
   if (existing) {
-    // 기존 보유 + 추가 → 평균단가 재계산
     const totalShares = existing.shares + shares;
     const newAvgPrice = Math.round(
       (existing.shares * existing.avg_price + shares * avgPrice) / totalShares
@@ -37,10 +42,12 @@ export const addHolding = async (userId, stockCode, stockName, shares, avgPrice)
     return data;
   }
 
-  // 새 종목 추가
+  const record = { user_id: userId, stock_code: stockCode, stock_name: stockName, shares, avg_price: avgPrice };
+  if (accountId) record.account_id = accountId;
+
   const { data, error } = await supabase
     .from('portfolios')
-    .insert({ user_id: userId, stock_code: stockCode, stock_name: stockName, shares, avg_price: avgPrice })
+    .insert(record)
     .select()
     .single();
   if (error) throw error;
@@ -58,6 +65,44 @@ export const updateHolding = async (id, shares, avgPrice) => {
   const { data, error } = await supabase
     .from('portfolios')
     .update({ shares, avg_price: avgPrice })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── 계좌 CRUD ──────────────────────────────────────────────────────
+
+export const getAccounts = async (userId) => {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
+};
+
+export const createAccount = async (userId, brokerage, alias, color) => {
+  const { data, error } = await supabase
+    .from('accounts')
+    .insert({ user_id: userId, brokerage, alias, color })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteAccount = async (id) => {
+  const { error } = await supabase.from('accounts').delete().eq('id', id);
+  if (error) throw error;
+};
+
+export const updateAccount = async (id, brokerage, alias, color) => {
+  const { data, error } = await supabase
+    .from('accounts')
+    .update({ brokerage, alias, color })
     .eq('id', id)
     .select()
     .single();

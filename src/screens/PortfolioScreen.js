@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,7 +22,7 @@ import { LineChart, PieChart } from 'react-native-chart-kit';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import AIChatModal from '../components/AIChatModal';
-import { getHoldings, deleteHolding, addHolding } from '../services/portfolioAPI';
+import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, deleteAccount } from '../services/portfolioAPI';
 import { fetchStockDetail } from '../services/stockAPI';
 import { analyzePortfolio } from '../services/groqAPI';
 import { loadNotifSettings, checkPnlAlert, checkBigMovementAlert } from '../services/notificationService';
@@ -175,6 +175,9 @@ const pieStyles = StyleSheet.create({
 
 // ── 섹터 분산 파이차트 ─────────────────────────────────────────────
 const SECTOR_COLORS = ['#00D9FF', '#A78BFA', '#00FF88', '#FFB800', '#FF4466', '#FF6B35', '#4ADE80', '#60A5FA', '#F472B6', '#34D399'];
+
+const ACCOUNT_COLORS = ['#00D9FF', '#00FF88', '#FFB800', '#A78BFA', '#FF6B35', '#FF4466', '#4ADE80', '#F472B6'];
+const BROKER_OPTIONS = ['키움증권', '미래에셋증권', '한국투자증권', 'NH투자증권', '삼성증권', 'KB증권', '신한투자증권', '토스증권', '카카오페이증권', '기타'];
 
 function SectorPieChart({ holdings }) {
   if (!holdings || holdings.length < 2) return null;
@@ -368,6 +371,276 @@ function HoldingCard({ item, aiItem, onDelete, onPress }) {
   );
 }
 
+// ── 계좌별 종목 행 (compact 2-line) ───────────────────────────────
+function CompactHoldingRow({ item, aiItem, onPress, onDelete }) {
+  const pnlRate = item.currentPrice != null
+    ? ((item.currentPrice - item.avg_price) / item.avg_price) * 100 : null;
+  const isUp = pnlRate != null ? pnlRate >= 0 : null;
+  const pnlColor = isUp == null ? '#FFFFFF' : isUp ? '#00FF88' : '#FF4466';
+  const actionColor = aiItem ? (ACTION_COLOR[aiItem.action] || '#6B7280') : null;
+
+  return (
+    <TouchableOpacity style={cStyles.row} onPress={onPress} activeOpacity={0.85}>
+      <View style={cStyles.line1}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+          <Text style={cStyles.name}>{item.stock_name}</Text>
+          {aiItem && (
+            <View style={[styles.actionBadge, { borderColor: (actionColor || '#6B7280') + '80', backgroundColor: (actionColor || '#6B7280') + '15' }]}>
+              <Text style={[styles.actionBadgeText, { color: actionColor || '#6B7280' }]}>{aiItem.action}</Text>
+            </View>
+          )}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {pnlRate != null && (
+            <Text style={[cStyles.pnlRate, { color: pnlColor }]}>
+              {isUp ? '+' : ''}{pnlRate.toFixed(2)}% {isUp ? '▲' : '▼'}
+            </Text>
+          )}
+          <TouchableOpacity onPress={() => onDelete(item.id, item.stock_name)} style={styles.deleteBtn}>
+            <Text style={styles.deleteBtnText}>삭제</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      <View style={cStyles.line2}>
+        <Text style={cStyles.meta}>{item.shares}주 · 평단 ₩{item.avg_price.toLocaleString()}</Text>
+        <Text style={cStyles.curPrice}>
+          {item.currentPrice != null ? `₩${item.currentPrice.toLocaleString()}` : '—'}
+        </Text>
+      </View>
+      {aiItem?.reason ? <Text style={cStyles.aiReason} numberOfLines={1}>▸ {aiItem.reason}</Text> : null}
+    </TouchableOpacity>
+  );
+}
+
+const cStyles = StyleSheet.create({
+  row: { paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
+  line1: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  name: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  pnlRate: { fontSize: 13, fontWeight: '700' },
+  line2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  meta: { fontSize: 12, color: '#6B7280' },
+  curPrice: { fontSize: 13, fontWeight: '600', color: '#C0C8E0' },
+  aiReason: { fontSize: 11, color: '#4A5568', marginTop: 4 },
+});
+
+// ── 계좌 탭바 ────────────────────────────────────────────────────────
+function AccountTabBar({ accounts, selectedId, onSelect, onAdd, onLongPress }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={tabStyles.scroll}
+      contentContainerStyle={tabStyles.content}
+    >
+      <TouchableOpacity
+        style={[tabStyles.pill, selectedId === 'all' && tabStyles.pillActive]}
+        onPress={() => onSelect('all')}
+      >
+        <Text style={[tabStyles.pillText, selectedId === 'all' && tabStyles.pillTextActive]}>전체</Text>
+      </TouchableOpacity>
+      {accounts.map(acc => (
+        <TouchableOpacity
+          key={acc.id}
+          style={[tabStyles.pill, selectedId === acc.id && { borderColor: acc.color + '80', backgroundColor: acc.color + '18' }]}
+          onPress={() => onSelect(acc.id)}
+          onLongPress={() => onLongPress && onLongPress(acc)}
+        >
+          <View style={[tabStyles.dot, { backgroundColor: acc.color }]} />
+          <Text style={[tabStyles.pillText, selectedId === acc.id && { color: acc.color }]}>{acc.alias}</Text>
+        </TouchableOpacity>
+      ))}
+      <TouchableOpacity style={[tabStyles.pill, tabStyles.pillAdd]} onPress={onAdd}>
+        <Text style={tabStyles.addText}>+ 계좌</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
+const tabStyles = StyleSheet.create({
+  scroll: { maxHeight: 52, borderBottomWidth: 1, borderBottomColor: '#1E2340' },
+  content: { paddingHorizontal: 16, paddingVertical: 9, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  pill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 13, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1, borderColor: '#252A47',
+    backgroundColor: '#12172E',
+  },
+  pillActive: { backgroundColor: '#00D9FF20', borderColor: '#00D9FF60' },
+  pillAdd: { borderStyle: 'dashed' },
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  pillText: { fontSize: 13, color: '#8892A4', fontWeight: '600' },
+  pillTextActive: { color: '#00D9FF' },
+  addText: { fontSize: 13, color: '#4A5568', fontWeight: '600' },
+});
+
+// ── 계좌 섹션 카드 ────────────────────────────────────────────────────
+function AccountSection({ account, holdings, diagnosis, navigation, onDelete }) {
+  const buy   = holdings.reduce((s, h) => s + h.avg_price * h.shares, 0);
+  const eval_ = holdings.reduce((s, h) => s + (h.currentPrice ?? h.avg_price) * h.shares, 0);
+  const pnl   = eval_ - buy;
+  const rate  = buy > 0 ? (pnl / buy) * 100 : 0;
+  const isUp  = pnl >= 0;
+  const pnlColor = isUp ? '#00FF88' : '#FF4466';
+  const acColor  = account?.color || '#6B7280';
+
+  return (
+    <View style={acStyles.section}>
+      <View style={[acStyles.header, { borderLeftColor: acColor }]}>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={[acStyles.dot, { backgroundColor: acColor }]} />
+            <Text style={acStyles.alias}>{account?.alias || '미분류'}</Text>
+            {account?.brokerage ? <Text style={acStyles.brokerage}>· {account.brokerage}</Text> : null}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 5 }}>
+            <Text style={acStyles.evalText}>
+              평가액 <Text style={acStyles.evalVal}>₩{Math.round(eval_).toLocaleString()}</Text>
+            </Text>
+            <Text style={[acStyles.pnlText, { color: pnlColor }]}>
+              {isUp ? '+' : ''}₩{Math.round(pnl).toLocaleString()}
+            </Text>
+          </View>
+        </View>
+        <Text style={[acStyles.rate, { color: pnlColor }]}>
+          {isUp ? '+' : ''}{rate.toFixed(2)}%
+        </Text>
+      </View>
+      {holdings.length === 0 ? (
+        <Text style={acStyles.empty}>보유 종목이 없습니다</Text>
+      ) : (
+        holdings.map(item => {
+          const baseCode = item.stock_code.split('.')[0];
+          const aiItem = diagnosis?.items?.find(d => d.code === baseCode || d.code === item.stock_code);
+          const symbol = item.stock_code.includes('.') ? item.stock_code : item.stock_code + '.KS';
+          return (
+            <CompactHoldingRow
+              key={item.id}
+              item={item}
+              aiItem={aiItem}
+              onDelete={onDelete}
+              onPress={() => navigation.navigate('StockDetail', { symbol, name: item.stock_name })}
+            />
+          );
+        })
+      )}
+    </View>
+  );
+}
+
+const acStyles = StyleSheet.create({
+  section: {
+    marginHorizontal: 16, marginBottom: 12,
+    backgroundColor: '#12172E', borderRadius: 16,
+    borderWidth: 1, borderColor: '#1E2A42', overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: 14, borderLeftWidth: 4,
+    backgroundColor: '#161B35',
+    borderBottomWidth: 1, borderBottomColor: '#1E2A42',
+  },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  alias: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  brokerage: { fontSize: 12, color: '#6B7280' },
+  evalText: { fontSize: 12, color: '#6B7280' },
+  evalVal: { color: '#D0D8E8', fontWeight: '600' },
+  pnlText: { fontSize: 12, fontWeight: '600' },
+  rate: { fontSize: 20, fontWeight: '800' },
+  empty: { color: '#4A5568', fontSize: 13, textAlign: 'center', paddingVertical: 18 },
+});
+
+// ── 계좌 생성 모달 ────────────────────────────────────────────────────
+function CreateAccountModal({ visible, onClose, onCreate }) {
+  const [brokerage, setBrokerage] = useState(BROKER_OPTIONS[0]);
+  const [alias, setAlias] = useState('');
+  const [color, setColor] = useState(ACCOUNT_COLORS[0]);
+  const [loading, setLoading] = useState(false);
+
+  const handleCreate = async () => {
+    if (!alias.trim()) { Alert.alert('입력 오류', '계좌 별칭을 입력해주세요.'); return; }
+    setLoading(true);
+    try {
+      await onCreate(brokerage, alias.trim(), color);
+      setBrokerage(BROKER_OPTIONS[0]); setAlias(''); setColor(ACCOUNT_COLORS[0]);
+      onClose();
+    } catch (e) {
+      Alert.alert('오류', '계좌 생성 실패: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <TouchableOpacity style={styles.modalBg} activeOpacity={1} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>새 계좌 추가</Text>
+
+          <Text style={[styles.inputLabel, { marginBottom: 8 }]}>색상</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 10, paddingVertical: 2 }}>
+              {ACCOUNT_COLORS.map(c => (
+                <TouchableOpacity
+                  key={c}
+                  onPress={() => setColor(c)}
+                  style={[{ width: 34, height: 34, borderRadius: 17, backgroundColor: c },
+                    color === c && { borderWidth: 3, borderColor: '#FFFFFF' }]}
+                />
+              ))}
+            </View>
+          </ScrollView>
+
+          <Text style={[styles.inputLabel, { marginBottom: 8 }]}>증권사</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {BROKER_OPTIONS.map(b => (
+                <TouchableOpacity
+                  key={b}
+                  style={[addStyles.optionBtn, { paddingHorizontal: 12, paddingVertical: 8, marginBottom: 0 },
+                    brokerage === b && { borderColor: color + '80', backgroundColor: color + '15' }]}
+                  onPress={() => setBrokerage(b)}
+                >
+                  <Text style={[addStyles.optionTitle, { fontSize: 13, marginBottom: 0 }, brokerage === b && { color }]}>{b}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>계좌 별칭</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="예: CMA, 주식, 연금저축"
+              placeholderTextColor="#4A5568"
+              value={alias}
+              onChangeText={setAlias}
+            />
+          </View>
+
+          {alias.trim() ? (
+            <View style={[acStyles.header, { borderLeftColor: color, borderRadius: 10, marginBottom: 16 }]}>
+              <View style={[acStyles.dot, { backgroundColor: color, marginRight: 8 }]} />
+              <Text style={acStyles.alias}>{alias.trim()}</Text>
+              <Text style={[acStyles.brokerage, { marginLeft: 6 }]}>· {brokerage}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.modalBtnRow}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelBtnText}>취소</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addBtn} onPress={handleCreate} disabled={loading}>
+              {loading ? <ActivityIndicator color="#0A0E27" /> : <Text style={styles.addBtnText}>계좌 만들기</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ── CSV 파싱 유틸 ──────────────────────────────────────────────────
 const parsePortfolioCSV = (text) => {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -414,7 +687,7 @@ const parsePortfolioCSV = (text) => {
 };
 
 // ── 종목 추가 모달 ─────────────────────────────────────────────────
-function AddHoldingModal({ visible, onClose, onAdd, serverUrl }) {
+function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], defaultAccountId = null, onCreateAccount }) {
   const [mode, setMode] = useState(null); // null=선택화면 | 'manual' | 'csv' | 'image'
 
   // 직접입력 state
@@ -435,11 +708,19 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl }) {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState('');
 
+  // 계좌 선택 state
+  const [targetAccountId, setTargetAccountId] = useState(null);
+
+  useEffect(() => {
+    if (visible) setTargetAccountId(defaultAccountId || null);
+  }, [visible, defaultAccountId]);
+
   const reset = () => {
     setMode(null);
     setStockCode(''); setStockName(''); setShares(''); setAvgPrice('');
     setCsvItems([]); setCsvError(''); setSelected({});
     setOcrImage(null); setOcrError('');
+    setTargetAccountId(null);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -456,7 +737,7 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl }) {
     if (isNaN(priceNum)  || priceNum  <= 0) { Alert.alert('입력 오류', '평균 매입가를 확인해주세요.'); return; }
     setLoading(true);
     try {
-      await onAdd(stockCode.trim(), stockName.trim(), sharesNum, priceNum);
+      await onAdd(stockCode.trim(), stockName.trim(), sharesNum, priceNum, targetAccountId);
       reset(); onClose();
     } catch (e) {
       Alert.alert('오류', e.message);
@@ -568,7 +849,7 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl }) {
     setLoading(true);
     let added = 0;
     for (const item of toAdd) {
-      try { await onAdd(item.code, item.name, item.shares, item.avgPrice); added++; }
+      try { await onAdd(item.code, item.name, item.shares, item.avgPrice, targetAccountId); added++; }
       catch {}
     }
     setLoading(false);
@@ -587,6 +868,45 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl }) {
           {!mode && (
             <>
               <Text style={styles.modalTitle}>종목 추가</Text>
+
+              {/* 계좌 선택 */}
+              {accounts.length > 0 && (
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={[styles.inputLabel, { marginBottom: 8 }]}>어느 계좌에 추가할까요?</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity
+                        style={[tabStyles.pill, targetAccountId === null && tabStyles.pillActive]}
+                        onPress={() => setTargetAccountId(null)}
+                      >
+                        <Text style={[tabStyles.pillText, targetAccountId === null && tabStyles.pillTextActive]}>미분류</Text>
+                      </TouchableOpacity>
+                      {accounts.map(acc => (
+                        <TouchableOpacity
+                          key={acc.id}
+                          style={[tabStyles.pill, targetAccountId === acc.id && { borderColor: acc.color + '80', backgroundColor: acc.color + '18' }]}
+                          onPress={() => setTargetAccountId(acc.id)}
+                        >
+                          <View style={[tabStyles.dot, { backgroundColor: acc.color }]} />
+                          <Text style={[tabStyles.pillText, targetAccountId === acc.id && { color: acc.color }]}>{acc.alias}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      {onCreateAccount && (
+                        <TouchableOpacity
+                          style={[tabStyles.pill, tabStyles.pillAdd]}
+                          onPress={async () => {
+                            // 인라인 계좌 생성을 위해 닫고 계좌 추가 탭 열기는 복잡하므로 알림으로 안내
+                            Alert.alert('계좌 추가', '종목 추가를 닫고 포트폴리오 탭에서 "+ 계좌" 버튼을 눌러 계좌를 먼저 만들어주세요.');
+                          }}
+                        >
+                          <Text style={tabStyles.addText}>+ 새 계좌</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
+
               <Text style={styles.modalSubtitle}>추가 방법을 선택하세요</Text>
 
               <TouchableOpacity style={addStyles.optionBtn} onPress={() => setMode('manual')}>
@@ -637,6 +957,15 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl }) {
                 <Text style={addStyles.backText}>‹ 뒤로</Text>
               </TouchableOpacity>
               <Text style={styles.modalTitle}>직접 입력</Text>
+              {(() => {
+                const acc = accounts.find(a => a.id === targetAccountId);
+                return acc ? (
+                  <View style={[tabStyles.pill, { alignSelf: 'flex-start', marginBottom: 12, borderColor: acc.color + '80', backgroundColor: acc.color + '18' }]}>
+                    <View style={[tabStyles.dot, { backgroundColor: acc.color }]} />
+                    <Text style={[tabStyles.pillText, { color: acc.color }]}>{acc.alias}</Text>
+                  </View>
+                ) : null;
+              })()}
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>종목코드</Text>
@@ -917,8 +1246,11 @@ function AIDiagnosisCard({ diagnosis, loading, onRequest }) {
 export default function PortfolioScreen({ navigation }) {
   const { user, signOut } = useAuth();
   const [holdings, setHoldings] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccountId, setSelectedAccountId] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [diagnosis, setDiagnosis] = useState(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
   const [pnlHistory, setPnlHistory] = useState([]);
@@ -928,7 +1260,8 @@ export default function PortfolioScreen({ navigation }) {
     if (!user) return;
     setLoading(true);
     try {
-      const data = await getHoldings(user.id);
+      const [data, accs] = await Promise.all([getHoldings(user.id), getAccounts(user.id)]);
+      setAccounts(accs);
       const withPrices = await Promise.all(
         data.map(async (item) => {
           try {
@@ -986,9 +1319,36 @@ export default function PortfolioScreen({ navigation }) {
     ]);
   };
 
-  const handleAdd = async (stockCode, stockName, shares, avgPrice) => {
-    await addHolding(user.id, stockCode, stockName, shares, avgPrice);
+  const handleAdd = async (stockCode, stockName, shares, avgPrice, accountId) => {
+    await addHolding(user.id, stockCode, stockName, shares, avgPrice, accountId || null);
     await loadPortfolio();
+  };
+
+  const handleCreateAccount = async (brokerage, alias, color) => {
+    const newAcc = await createAccount(user.id, brokerage, alias, color);
+    setAccounts(prev => [...prev, newAcc]);
+  };
+
+  const handleDeleteAccount = (acc) => {
+    Alert.alert(
+      '계좌 삭제',
+      `"${acc.alias}" 계좌를 삭제할까요?\n해당 계좌의 종목은 미분류로 이동됩니다.`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제', style: 'destructive', onPress: async () => {
+            try {
+              await deleteAccount(acc.id);
+              setAccounts(prev => prev.filter(a => a.id !== acc.id));
+              if (selectedAccountId === acc.id) setSelectedAccountId('all');
+              await loadPortfolio();
+            } catch (e) {
+              Alert.alert('오류', '삭제 실패: ' + e.message);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const requestDiagnosis = async () => {
@@ -1028,21 +1388,50 @@ export default function PortfolioScreen({ navigation }) {
     );
   }
 
+  // 현재 선택된 계좌 기준으로 필터된 holdings
+  const visibleHoldings = selectedAccountId === 'all'
+    ? holdings
+    : holdings.filter(h => h.account_id === selectedAccountId);
+
+  // 전체 보기: 계좌별 그룹
+  const accountGroups = accounts.map(acc => ({
+    account: acc,
+    holdings: holdings.filter(h => h.account_id === acc.id),
+  }));
+  const unassigned = holdings.filter(h => !h.account_id);
+
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* 헤더 */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>포트폴리오</Text>
-          <TouchableOpacity onPress={signOut} style={styles.signOutBtn}>
-            <Text style={styles.signOutText}>로그아웃</Text>
-          </TouchableOpacity>
+          <View>
+            <Text style={styles.headerTitle}>포트폴리오</Text>
+            <Text style={styles.userEmail}>{user.email}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={[styles.summaryValue, { fontSize: 20, marginBottom: 2 }]}>
+              ₩{totalEval.toLocaleString()}
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: isPositive ? '#00FF88' : '#FF4466' }}>
+              {isPositive ? '+' : ''}{totalRate.toFixed(2)}% {isPositive ? '▲' : '▼'}
+            </Text>
+          </View>
         </View>
 
-        <Text style={styles.userEmail}>{user.email}</Text>
+        {/* 계좌 탭바 */}
+        <AccountTabBar
+          accounts={accounts}
+          selectedId={selectedAccountId}
+          onSelect={setSelectedAccountId}
+          onAdd={() => setShowAccountModal(true)}
+          onLongPress={handleDeleteAccount}
+        />
 
         {/* 수익률 추이 차트 */}
-        <PnLChart history={pnlHistory} />
+        <View style={{ marginTop: 12 }}>
+          <PnLChart history={pnlHistory} />
+        </View>
 
         {/* AI 포트폴리오 진단 */}
         {holdings.length > 0 && (
@@ -1053,77 +1442,77 @@ export default function PortfolioScreen({ navigation }) {
           />
         )}
 
-        {/* 총 평가 요약 */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>총 평가액</Text>
-          <Text style={styles.summaryValue}>₩{totalEval.toLocaleString()}</Text>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryItemLabel}>총 매수금액</Text>
-              <Text style={styles.summaryItemValue}>₩{totalBuy.toLocaleString()}</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryItemLabel}>평가 손익</Text>
-              <Text style={[styles.summaryItemValue, { color: isPositive ? '#00FF88' : '#FF4466' }]}>
-                {isPositive ? '+' : ''}₩{Math.round(totalPnl).toLocaleString()}
-              </Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryItemLabel}>수익률</Text>
-              <Text style={[styles.summaryItemValue, { color: isPositive ? '#00FF88' : '#FF4466' }]}>
-                {isPositive ? '+' : ''}{totalRate.toFixed(2)}%
-              </Text>
+        {/* 전체 요약 카드 (단일 계좌 뷰에서는 작게) */}
+        {selectedAccountId === 'all' && (
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>전체 포트폴리오 요약</Text>
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryItemLabel}>총 매수금액</Text>
+                <Text style={styles.summaryItemValue}>₩{totalBuy.toLocaleString()}</Text>
+              </View>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryItemLabel}>평가 손익</Text>
+                <Text style={[styles.summaryItemValue, { color: isPositive ? '#00FF88' : '#FF4466' }]}>
+                  {isPositive ? '+' : ''}₩{Math.round(totalPnl).toLocaleString()}
+                </Text>
+              </View>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryItemLabel}>{holdings.length}종목</Text>
+                <Text style={styles.summaryItemValue}>{accounts.length}계좌</Text>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* 보유 비중 파이차트 */}
-        <PortfolioPieChart holdings={holdings} />
+        <PortfolioPieChart holdings={visibleHoldings} />
 
         {/* 섹터 분산 파이차트 */}
-        <SectorPieChart holdings={holdings} />
+        <SectorPieChart holdings={visibleHoldings} />
 
-        {/* 보유 종목 */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>보유 종목</Text>
-            <Text style={styles.sectionCount}>{holdings.length}종목</Text>
+        {/* 보유 종목 — 계좌별 그룹 or 단일 계좌 필터 */}
+        {loading ? (
+          <ActivityIndicator color="#00D9FF" style={{ paddingVertical: 30 }} />
+        ) : holdings.length === 0 ? (
+          <View style={[styles.emptyBox, { marginHorizontal: 16 }]}>
+            <Text style={styles.emptyIcon}>📭</Text>
+            <Text style={styles.emptyText}>보유 종목이 없습니다</Text>
+            <Text style={styles.emptySubText}>아래 + 버튼으로 직접 추가해보세요</Text>
           </View>
-
-          {loading ? (
-            <ActivityIndicator color="#00D9FF" style={{ paddingVertical: 30 }} />
-          ) : holdings.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyIcon}>📭</Text>
-              <Text style={styles.emptyText}>보유 종목이 없습니다</Text>
-              <Text style={styles.emptySubText}>아래 + 버튼으로 직접 추가해보세요</Text>
-            </View>
-          ) : (
-            holdings.map(item => {
-              const baseCode = item.stock_code.split('.')[0];
-              const aiItem = diagnosis?.items?.find(
-                d => d.code === baseCode || d.code === item.stock_code
-              );
-              const symbol = item.stock_code.includes('.')
-                ? item.stock_code
-                : item.stock_code + '.KS';
-              return (
-                <HoldingCard
-                  key={item.id}
-                  item={item}
-                  aiItem={aiItem}
-                  onDelete={handleDelete}
-                  onPress={() => navigation.navigate('StockDetail', {
-                    symbol,
-                    name: item.stock_name,
-                  })}
-                />
-              );
-            })
-          )}
-        </View>
+        ) : selectedAccountId === 'all' ? (
+          <>
+            {accountGroups.map(({ account, holdings: ah }) => (
+              <AccountSection
+                key={account.id}
+                account={account}
+                holdings={ah}
+                diagnosis={diagnosis}
+                navigation={navigation}
+                onDelete={handleDelete}
+              />
+            ))}
+            {unassigned.length > 0 && (
+              <AccountSection
+                account={null}
+                holdings={unassigned}
+                diagnosis={diagnosis}
+                navigation={navigation}
+                onDelete={handleDelete}
+              />
+            )}
+          </>
+        ) : (
+          <AccountSection
+            account={accounts.find(a => a.id === selectedAccountId) || null}
+            holdings={visibleHoldings}
+            diagnosis={diagnosis}
+            navigation={navigation}
+            onDelete={handleDelete}
+          />
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -1139,6 +1528,15 @@ export default function PortfolioScreen({ navigation }) {
         onClose={() => setShowAddModal(false)}
         onAdd={handleAdd}
         serverUrl="https://server-nine-alpha-95.vercel.app"
+        accounts={accounts}
+        defaultAccountId={selectedAccountId === 'all' ? null : selectedAccountId}
+        onCreateAccount={handleCreateAccount}
+      />
+
+      <CreateAccountModal
+        visible={showAccountModal}
+        onClose={() => setShowAccountModal(false)}
+        onCreate={handleCreateAccount}
       />
 
       {/* AI 채팅 FAB */}
@@ -1186,7 +1584,7 @@ const styles = StyleSheet.create({
     borderColor: '#252A47',
   },
   signOutText: { color: '#6B7280', fontSize: 13 },
-  userEmail: { color: '#6B7280', fontSize: 12, paddingHorizontal: 20, marginBottom: 16 },
+  userEmail: { color: '#6B7280', fontSize: 12, marginTop: 2 },
 
   // 요약 카드
   summaryCard: {
