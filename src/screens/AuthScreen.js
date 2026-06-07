@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 
-export default function AuthScreen() {
+export default function AuthScreen({ navigation }) {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
@@ -55,6 +55,7 @@ export default function AuthScreen() {
     try {
       if (mode === 'login') {
         await signIn(email.trim(), password);
+        navigation.goBack();
       } else {
         await signUp(email.trim(), password);
         Alert.alert(
@@ -64,12 +65,14 @@ export default function AuthScreen() {
         );
       }
     } catch (error) {
-      const msg = error.message?.includes('Invalid login')
+      const msg = error.message?.includes('Invalid login') || error.message?.includes('invalid_credentials')
         ? '이메일 또는 비밀번호가 올바르지 않습니다.'
-        : error.message?.includes('already registered')
+        : error.message?.includes('already registered') || error.message?.includes('already been registered')
         ? '이미 가입된 이메일입니다.'
+        : error.message?.includes('Email not confirmed') || error.message?.includes('email_not_confirmed')
+        ? '이메일 인증이 완료되지 않았습니다.\n가입 시 발송된 이메일을 확인해주세요.\n\n(또는 Supabase 대시보드에서 이메일 인증을 비활성화하세요.)'
         : error.message || '오류가 발생했습니다.';
-      Alert.alert('오류', msg);
+      Alert.alert('로그인 실패', msg);
     } finally {
       setLoading(false);
     }

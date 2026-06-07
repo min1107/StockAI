@@ -125,6 +125,7 @@ export const fetchStockDetail = async (symbol) => {
         pbr: kisData.pbr ?? null,
         eps: kisData.eps ?? null,
         bps: kisData.bps ?? null,
+        sector: kisData.sector ?? null,
         currency: 'KRW',
       };
     } else {

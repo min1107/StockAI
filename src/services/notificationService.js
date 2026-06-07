@@ -221,6 +221,39 @@ export const checkBigMovementAlert = async (holdings, thresholdPct) => {
   await AsyncStorage.setItem(LAST_MOVE_ALERT_KEY, JSON.stringify(alerted));
 };
 
+// ── 수급 이상 감지 알림 ───────────────────────────────────────────
+const LAST_SUPPLY_ALERT_KEY = '@StockAI:lastSupplyAlert';
+
+export const checkSupplyAnomalyAlert = async (anomalies) => {
+  if (!anomalies || anomalies.length === 0) return;
+
+  const today = new Date().toDateString();
+  const raw = await AsyncStorage.getItem(LAST_SUPPLY_ALERT_KEY);
+  const alerted = raw ? JSON.parse(raw) : {};
+
+  for (const a of anomalies) {
+    const key = `${a.code}_${today}`;
+    if (alerted[key]) continue;
+
+    const label = a.bothBuying
+      ? '기관+외국인 동시 대량 매수'
+      : a.type === 'institution' ? '기관 대량 매수' : '외국인 대량 매수';
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `🔥 ${a.name} 수급 이상`,
+        body: `${label} 감지 — 기회 종목 탭에서 확인하세요`,
+        sound: true,
+      },
+      trigger: null,
+    });
+
+    alerted[key] = true;
+  }
+
+  await AsyncStorage.setItem(LAST_SUPPLY_ALERT_KEY, JSON.stringify(alerted));
+};
+
 // ── KOSPI/KOSDAQ 급변동 알림 ──────────────────────────────────────
 const LAST_KOSPI_ALERT_KEY = '@StockAI:lastKospiAlert';
 

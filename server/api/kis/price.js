@@ -39,6 +39,7 @@ module.exports = async (req, res) => {
       pbr: parseFloat(output.pbr) || null,
       eps: parseInt(output.eps) || null,
       bps: parseInt(output.bps) || null,
+      sector: output.bstp_kor_isnm || null,
     });
   } catch (error) {
     console.error(`KIS price error [${req.query.code}]:`, error.message);

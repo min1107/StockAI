@@ -171,6 +171,64 @@ const pieStyles = StyleSheet.create({
   title: { fontSize: 13, color: '#6B7280', fontWeight: '600', marginBottom: 4 },
 });
 
+// ── 섹터 분산 파이차트 ─────────────────────────────────────────────
+const SECTOR_COLORS = ['#00D9FF', '#A78BFA', '#00FF88', '#FFB800', '#FF4466', '#FF6B35', '#4ADE80', '#60A5FA', '#F472B6', '#34D399'];
+
+function SectorPieChart({ holdings }) {
+  if (!holdings || holdings.length < 2) return null;
+
+  const sectorMap = {};
+  for (const h of holdings) {
+    const sectorName = h.sector || '기타';
+    const value = (h.currentPrice ?? h.avg_price) * h.shares;
+    sectorMap[sectorName] = (sectorMap[sectorName] || 0) + value;
+  }
+
+  const totalEval = Object.values(sectorMap).reduce((s, v) => s + v, 0);
+  if (totalEval === 0) return null;
+
+  const sectors = Object.keys(sectorMap);
+  if (sectors.length < 2) return null;
+
+  const data = sectors.map((name, i) => ({
+    name: `${name} ${((sectorMap[name] / totalEval) * 100).toFixed(0)}%`,
+    value: sectorMap[name],
+    color: SECTOR_COLORS[i % SECTOR_COLORS.length],
+    legendFontColor: '#8892A4',
+    legendFontSize: 11,
+  }));
+
+  // 집중도 경고 (한 섹터 50% 이상)
+  const maxSector = sectors.reduce((a, b) => sectorMap[a] > sectorMap[b] ? a : b);
+  const maxPct = (sectorMap[maxSector] / totalEval) * 100;
+  const showWarning = maxPct >= 50;
+
+  return (
+    <View style={pieStyles.container}>
+      <Text style={pieStyles.title}>섹터 분산</Text>
+      <PieChart
+        data={data}
+        width={SCREEN_W - 32}
+        height={180}
+        chartConfig={{ color: () => '#fff', backgroundColor: 'transparent', backgroundGradientFrom: '#161B35', backgroundGradientTo: '#161B35' }}
+        accessor="value"
+        backgroundColor="transparent"
+        paddingLeft="10"
+        absolute={false}
+        hasLegend={true}
+      />
+      {showWarning && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, padding: 8, backgroundColor: '#FF446615', borderRadius: 8, borderWidth: 1, borderColor: '#FF446640' }}>
+          <Text style={{ fontSize: 12 }}>⚠️</Text>
+          <Text style={{ fontSize: 12, color: '#FF6B6B', flex: 1 }}>
+            {maxSector} 섹터 집중도 {maxPct.toFixed(0)}% — 분산 투자를 고려해보세요
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 const chartStyles = StyleSheet.create({
   container: {
     marginHorizontal: 16, marginBottom: 16,
@@ -762,9 +820,9 @@ export default function PortfolioScreen({ navigation }) {
         data.map(async (item) => {
           try {
             const detail = await fetchStockDetail(item.stock_code);
-            return { ...item, currentPrice: detail?.regularMarketPrice ?? null };
+            return { ...item, currentPrice: detail?.regularMarketPrice ?? null, sector: detail?.sector ?? null };
           } catch {
-            return { ...item, currentPrice: null };
+            return { ...item, currentPrice: null, sector: null };
           }
         })
       );
@@ -910,6 +968,9 @@ export default function PortfolioScreen({ navigation }) {
 
         {/* 보유 비중 파이차트 */}
         <PortfolioPieChart holdings={holdings} />
+
+        {/* 섹터 분산 파이차트 */}
+        <SectorPieChart holdings={holdings} />
 
         {/* 보유 종목 */}
         <View style={styles.section}>

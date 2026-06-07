@@ -41,6 +41,7 @@ module.exports = async (req, res) => {
           marketCap: parseInt(output.hts_avls),
           fiftyTwoWeekHigh: parseInt(output.w52_hgpr) || 0,
           fiftyTwoWeekLow: parseInt(output.w52_lwpr) || 0,
+          sector: output.bstp_kor_isnm || null,
         };
       } catch (err) {
         console.error(`KIS prices error [${code}]:`, err.message);

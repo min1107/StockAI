@@ -13,6 +13,7 @@ import StockDetailScreen from './src/screens/StockDetailScreen';
 import PortfolioScreen from './src/screens/PortfolioScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
+import OpportunityScreen from './src/screens/OpportunityScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
 setupNotifHandler();
@@ -47,6 +48,15 @@ function PortfolioStack() {
   );
 }
 
+function OpportunityStack() {
+  return (
+    <Stack.Navigator screenOptions={stackScreenOptions}>
+      <Stack.Screen name="Opportunity" component={OpportunityScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="OpportunityStockDetail" component={StockDetailScreen} options={{ title: '종목 상세' }} />
+    </Stack.Navigator>
+  );
+}
+
 function SettingsStack() {
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
@@ -64,6 +74,7 @@ function MainTabs() {
           let icon;
           if (route.name === 'HomeTab') icon = focused ? 'home' : 'home-outline';
           else if (route.name === 'PortfolioTab') icon = focused ? 'briefcase' : 'briefcase-outline';
+          else if (route.name === 'OpportunityTab') icon = focused ? 'flash' : 'flash-outline';
           else icon = focused ? 'settings' : 'settings-outline';
           return <Ionicons name={icon} size={size} color={color} />;
         },
@@ -79,6 +90,7 @@ function MainTabs() {
     >
       <Tab.Screen name="HomeTab" component={HomeStack} options={{ title: '홈' }} />
       <Tab.Screen name="PortfolioTab" component={PortfolioStack} options={{ title: '포트폴리오' }} />
+      <Tab.Screen name="OpportunityTab" component={OpportunityStack} options={{ title: '기회' }} />
       <Tab.Screen name="SettingsTab" component={SettingsStack} options={{ title: '설정' }} />
     </Tab.Navigator>
   );

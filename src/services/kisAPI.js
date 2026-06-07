@@ -191,6 +191,16 @@ export const getSectorData = async () => {
   }
 };
 
+export const getOpportunityData = async () => {
+  try {
+    const response = await axios.get(`${SERVER}/api/market/opportunity`, { timeout: 30000 });
+    return response.data;
+  } catch (error) {
+    console.error('❌ 기회 종목 조회 실패:', error.message);
+    return null;
+  }
+};
+
 // 8. AI 자유 질문
 export const sendAIChat = async (question, stockCode = null, stockName = null, portfolioText = null, history = []) => {
   try {
