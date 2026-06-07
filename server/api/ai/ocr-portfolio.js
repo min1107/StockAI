@@ -1,23 +1,9 @@
 /**
  * 포트폴리오 스크린샷 OCR
- * - FormData multipart로 이미지 수신 (base64 JSON 방식 대신)
- * - Gemini Vision으로 종목코드/종목명/수량/평균매입가 추출
+ * - 클라이언트에서 압축된 base64 이미지를 받아 Gemini Vision으로 종목 추출
  */
 
 const axios = require('axios');
-const multer = require('multer');
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
-});
-
-const runMulter = (req, res) =>
-  new Promise((resolve, reject) => {
-    upload.single('image')(req, res, (err) => {
-      if (err) reject(err); else resolve();
-    });
-  });
 
 const PROMPT = `이 이미지는 한국 증권사 앱의 보유종목 화면입니다.
 이미지에서 보유 종목 정보를 추출해주세요.
@@ -44,19 +30,11 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
+  const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 필요' });
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 없음' });
-
-  try {
-    await runMulter(req, res);
-  } catch (err) {
-    return res.status(400).json({ error: '파일 업로드 실패: ' + err.message });
-  }
-
-  if (!req.file) return res.status(400).json({ error: '이미지 파일이 없습니다' });
-
-  const imageBase64 = req.file.buffer.toString('base64');
-  const mimeType = req.file.mimetype || 'image/jpeg';
 
   try {
     const response = await axios.post(

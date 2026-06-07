@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -756,27 +757,29 @@ function AddHoldingModal({ visible, onClose, onAdd, serverUrl, accounts = [], de
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.7,
+      quality: 1,
     });
     if (result.canceled) return;
-    setOcrImage(result.assets[0]);
+
+    // 1024px로 리사이즈 + 50% 압축 → base64 (400KB 이하로 줄어듦)
+    const compressed = await ImageManipulator.manipulateAsync(
+      result.assets[0].uri,
+      [{ resize: { width: 1024 } }],
+      { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+    setOcrImage({ uri: compressed.uri, base64: compressed.base64, mimeType: 'image/jpeg' });
   };
 
   // ── 이미지 OCR 실행 ──
   const handleOCR = async () => {
-    if (!ocrImage?.uri) return;
+    if (!ocrImage?.base64) return;
     setOcrLoading(true);
     setOcrError('');
     try {
-      const formData = new FormData();
-      formData.append('image', {
-        uri: ocrImage.uri,
-        type: ocrImage.mimeType || 'image/jpeg',
-        name: 'screenshot.jpg',
-      });
       const response = await fetch(`${serverUrl}/api/ai/ocr-portfolio`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: ocrImage.base64, mimeType: 'image/jpeg' }),
       });
       const text = await response.text();
       let data;
