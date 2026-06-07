@@ -89,8 +89,8 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="HomeTab" component={HomeStack} options={{ title: '홈' }} />
+      <Tab.Screen name="OpportunityTab" component={OpportunityStack} options={{ title: '발굴' }} />
       <Tab.Screen name="PortfolioTab" component={PortfolioStack} options={{ title: '포트폴리오' }} />
-      <Tab.Screen name="OpportunityTab" component={OpportunityStack} options={{ title: '기회' }} />
       <Tab.Screen name="SettingsTab" component={SettingsStack} options={{ title: '설정' }} />
     </Tab.Navigator>
   );
