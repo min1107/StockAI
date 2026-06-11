@@ -20,7 +20,7 @@ import { LineChart, PieChart } from 'react-native-chart-kit';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import AIChatModal from '../components/AIChatModal';
-import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, deleteAccount } from '../services/portfolioAPI';
+import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, deleteAccount, moveHolding } from '../services/portfolioAPI';
 import { fetchStockDetail, searchStocks } from '../services/stockAPI';
 import { analyzePortfolio } from '../services/groqAPI';
 import { loadNotifSettings, checkPnlAlert, checkBigMovementAlert } from '../services/notificationService';
@@ -370,7 +370,7 @@ function HoldingCard({ item, aiItem, onDelete, onPress }) {
 }
 
 // ── 계좌별 종목 행 (compact 2-line) ───────────────────────────────
-function CompactHoldingRow({ item, aiItem, onPress, onDelete }) {
+function CompactHoldingRow({ item, aiItem, onPress, onDelete, onMove }) {
   const pnlRate = item.currentPrice != null
     ? ((item.currentPrice - item.avg_price) / item.avg_price) * 100 : null;
   const isUp = pnlRate != null ? pnlRate >= 0 : null;
@@ -393,6 +393,11 @@ function CompactHoldingRow({ item, aiItem, onPress, onDelete }) {
             <Text style={[cStyles.pnlRate, { color: pnlColor }]}>
               {isUp ? '+' : ''}{pnlRate.toFixed(2)}% {isUp ? '▲' : '▼'}
             </Text>
+          )}
+          {onMove && (
+            <TouchableOpacity onPress={() => onMove(item)} style={cStyles.moveBtn}>
+              <Text style={cStyles.moveBtnText}>계좌이동</Text>
+            </TouchableOpacity>
           )}
           <TouchableOpacity onPress={() => onDelete(item.id, item.stock_name)} style={styles.deleteBtn}>
             <Text style={styles.deleteBtnText}>삭제</Text>
@@ -419,6 +424,11 @@ const cStyles = StyleSheet.create({
   meta: { fontSize: 12, color: '#6B7280' },
   curPrice: { fontSize: 13, fontWeight: '600', color: '#C0C8E0' },
   aiReason: { fontSize: 11, color: '#4A5568', marginTop: 4 },
+  moveBtn: {
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 7,
+    borderWidth: 1, borderColor: '#2E3A5C', backgroundColor: '#1A2138',
+  },
+  moveBtnText: { fontSize: 11, color: '#8FA8D8', fontWeight: '600' },
 });
 
 // ── 계좌 탭바 ────────────────────────────────────────────────────────
@@ -472,7 +482,7 @@ const tabStyles = StyleSheet.create({
 });
 
 // ── 계좌 섹션 카드 ────────────────────────────────────────────────────
-function AccountSection({ account, holdings, diagnosis, navigation, onDelete }) {
+function AccountSection({ account, holdings, diagnosis, navigation, onDelete, onMove }) {
   const buy   = holdings.reduce((s, h) => s + h.avg_price * h.shares, 0);
   const eval_ = holdings.reduce((s, h) => s + (h.currentPrice ?? h.avg_price) * h.shares, 0);
   const pnl   = eval_ - buy;
@@ -516,6 +526,7 @@ function AccountSection({ account, holdings, diagnosis, navigation, onDelete }) 
               item={item}
               aiItem={aiItem}
               onDelete={onDelete}
+              onMove={onMove}
               onPress={() => navigation.navigate('StockDetail', { symbol, name: item.stock_name })}
             />
           );
@@ -638,6 +649,63 @@ function CreateAccountModal({ visible, onClose, onCreate }) {
     </Modal>
   );
 }
+
+// ── 계좌 이동 선택 시트 ──────────────────────────────────────────────
+function AccountPickerModal({ visible, holding, accounts, onClose, onSelect }) {
+  const currentId = holding?.account_id ?? null;
+  const options = [{ id: null, alias: '미분류', brokerage: '', color: '#6B7280' }, ...accounts];
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <TouchableOpacity style={styles.modalBg} activeOpacity={1} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>계좌 이동</Text>
+          {holding ? (
+            <Text style={{ fontSize: 13, color: '#8892A4', marginBottom: 14 }}>
+              "{holding.stock_name}"을(를) 옮길 계좌를 선택하세요
+            </Text>
+          ) : null}
+
+          {options.map(opt => {
+            const isCurrent = (opt.id ?? null) === currentId;
+            return (
+              <TouchableOpacity
+                key={opt.id ?? 'unassigned'}
+                style={[pickStyles.row, isCurrent && { borderColor: opt.color + '80', backgroundColor: opt.color + '15' }]}
+                onPress={() => onSelect(opt.id)}
+                disabled={isCurrent}
+                activeOpacity={0.8}
+              >
+                <View style={[pickStyles.dot, { backgroundColor: opt.color }]} />
+                <Text style={[pickStyles.alias, isCurrent && { color: opt.color }]}>{opt.alias}</Text>
+                {opt.brokerage ? <Text style={pickStyles.broker}>· {opt.brokerage}</Text> : null}
+                {isCurrent ? <Text style={pickStyles.current}>현재</Text> : null}
+              </TouchableOpacity>
+            );
+          })}
+
+          <TouchableOpacity style={[styles.cancelBtn, { marginTop: 8 }]} onPress={onClose}>
+            <Text style={styles.cancelBtnText}>취소</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const pickStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 14, marginBottom: 8,
+    borderRadius: 12, borderWidth: 1, borderColor: '#252A47', backgroundColor: '#12172E',
+  },
+  dot: { width: 9, height: 9, borderRadius: 5 },
+  alias: { fontSize: 15, fontWeight: '700', color: '#E2E8F0' },
+  broker: { fontSize: 12, color: '#6B7280' },
+  current: { fontSize: 11, color: '#6B7280', fontWeight: '600', marginLeft: 'auto' },
+});
 
 // ── 붙여넣기 텍스트 파서 ────────────────────────────────────────────
 // 휴대폰 OCR(텍스트 인식)로 변환한 증권사 보유종목 텍스트를 유연하게 파싱.
@@ -1381,6 +1449,7 @@ export default function PortfolioScreen({ navigation }) {
   const [selectedAccountId, setSelectedAccountId] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [moveTarget, setMoveTarget] = useState(null); // 계좌 이동할 종목
   const [loading, setLoading] = useState(false);
   const [diagnosis, setDiagnosis] = useState(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
@@ -1460,6 +1529,17 @@ export default function PortfolioScreen({ navigation }) {
   const handleCreateAccount = async (brokerage, alias, color) => {
     const newAcc = await createAccount(user.id, brokerage, alias, color);
     setAccounts(prev => [...prev, newAcc]);
+  };
+
+  const handleConfirmMove = async (accountId) => {
+    if (!moveTarget) return;
+    try {
+      await moveHolding(moveTarget.id, accountId);
+      setMoveTarget(null);
+      await loadPortfolio();
+    } catch (e) {
+      Alert.alert('오류', '계좌 이동 실패: ' + e.message);
+    }
   };
 
   const handleDeleteAccount = (acc) => {
@@ -1625,6 +1705,7 @@ export default function PortfolioScreen({ navigation }) {
                 diagnosis={diagnosis}
                 navigation={navigation}
                 onDelete={handleDelete}
+                onMove={setMoveTarget}
               />
             ))}
             {unassigned.length > 0 && (
@@ -1634,6 +1715,7 @@ export default function PortfolioScreen({ navigation }) {
                 diagnosis={diagnosis}
                 navigation={navigation}
                 onDelete={handleDelete}
+                onMove={setMoveTarget}
               />
             )}
           </>
@@ -1644,6 +1726,7 @@ export default function PortfolioScreen({ navigation }) {
             diagnosis={diagnosis}
             navigation={navigation}
             onDelete={handleDelete}
+            onMove={setMoveTarget}
           />
         )}
 
@@ -1669,6 +1752,14 @@ export default function PortfolioScreen({ navigation }) {
         visible={showAccountModal}
         onClose={() => setShowAccountModal(false)}
         onCreate={handleCreateAccount}
+      />
+
+      <AccountPickerModal
+        visible={!!moveTarget}
+        holding={moveTarget}
+        accounts={accounts}
+        onClose={() => setMoveTarget(null)}
+        onSelect={handleConfirmMove}
       />
 
       {/* AI 채팅 FAB */}

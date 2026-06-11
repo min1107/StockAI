@@ -60,6 +60,18 @@ export const deleteHolding = async (id) => {
   if (error) throw error;
 };
 
+// 종목을 다른 계좌로 이동 (accountId=null이면 미분류로)
+export const moveHolding = async (id, accountId) => {
+  const { data, error } = await supabase
+    .from('portfolios')
+    .update({ account_id: accountId })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
 // 종목 수정
 export const updateHolding = async (id, shares, avgPrice) => {
   const { data, error } = await supabase
