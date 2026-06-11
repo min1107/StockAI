@@ -1483,7 +1483,7 @@ function AIDiagnosisCard({ diagnosis, loading, onRequest }) {
       {/* 매크로 영향 */}
       {diagnosis.macroImpact ? (
         <View style={styles.macroImpactRow}>
-          <Text style={styles.macroImpactLabel}>🌍 매크로</Text>
+          <Text style={styles.macroImpactLabel}>매크로</Text>
           <Text style={styles.macroImpactText}>{diagnosis.macroImpact}</Text>
         </View>
       ) : null}
@@ -1996,7 +1996,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#C0C8E0',
     lineHeight: 21,
-    fontStyle: 'italic',
     marginBottom: 12,
   },
   macroImpactRow: {
