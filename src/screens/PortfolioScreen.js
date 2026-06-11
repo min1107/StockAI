@@ -370,7 +370,7 @@ function HoldingCard({ item, aiItem, onDelete, onPress }) {
 }
 
 // ── 계좌별 종목 행 (compact 2-line) ───────────────────────────────
-function CompactHoldingRow({ item, aiItem, onPress, onDelete, onMove }) {
+function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
   const hasPrice  = item.currentPrice != null;
   const perShare  = hasPrice ? item.currentPrice - item.avg_price : null;        // 한 주당 손익
   const totalPnl  = hasPrice ? perShare * item.shares : null;                    // 평가손익
@@ -381,105 +381,57 @@ function CompactHoldingRow({ item, aiItem, onPress, onDelete, onMove }) {
   const actionColor = aiItem ? (ACTION_COLOR[aiItem.action] || '#6B7280') : null;
 
   return (
-    <View style={cStyles.card}>
-      <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
-        {/* 헤더: 종목명 + 코드 / 평가손익 + 수익률 */}
-        <View style={cStyles.header}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <Text style={cStyles.name}>{item.stock_name}</Text>
-              {aiItem && (
-                <View style={[styles.actionBadge, { borderColor: (actionColor || '#6B7280') + '80', backgroundColor: (actionColor || '#6B7280') + '15' }]}>
-                  <Text style={[styles.actionBadgeText, { color: actionColor || '#6B7280' }]}>{aiItem.action}</Text>
-                </View>
-              )}
+    <TouchableOpacity
+      style={cStyles.card}
+      onPress={onPress}
+      onLongPress={() => onActionMenu && onActionMenu(item)}
+      delayLongPress={280}
+      activeOpacity={0.85}
+    >
+      {/* 1줄: 종목명 + 코드 / 평가손익 */}
+      <View style={cStyles.line1}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingRight: 8 }}>
+          <Text style={cStyles.name} numberOfLines={1}>{item.stock_name}</Text>
+          <Text style={cStyles.code}>{item.stock_code}</Text>
+          {aiItem && (
+            <View style={[styles.actionBadge, { borderColor: (actionColor || '#6B7280') + '80', backgroundColor: (actionColor || '#6B7280') + '15' }]}>
+              <Text style={[styles.actionBadgeText, { color: actionColor || '#6B7280' }]}>{aiItem.action}</Text>
             </View>
-            <Text style={cStyles.code}>{item.stock_code}</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={[cStyles.pnlAmount, { color: pnlColor }]}>
-              {hasPrice ? `${sign}₩${Math.round(totalPnl).toLocaleString()}` : '—'}
-            </Text>
-            {hasPrice && (
-              <Text style={[cStyles.pnlRate, { color: pnlColor }]}>
-                {sign}{pnlRate.toFixed(2)}% {isUp ? '▲' : '▼'}
-              </Text>
-            )}
-          </View>
+          )}
         </View>
-
-        {/* 메타 그리드: 보유 · 평단가 · 현재가 · 주당손익 */}
-        <View style={cStyles.metaGrid}>
-          <View style={cStyles.metaItem}>
-            <Text style={cStyles.metaLabel}>보유</Text>
-            <Text style={cStyles.metaValue}>{item.shares.toLocaleString()}주</Text>
-          </View>
-          <View style={cStyles.metaDivider} />
-          <View style={cStyles.metaItem}>
-            <Text style={cStyles.metaLabel}>평단가</Text>
-            <Text style={cStyles.metaValue}>₩{item.avg_price.toLocaleString()}</Text>
-          </View>
-          <View style={cStyles.metaDivider} />
-          <View style={cStyles.metaItem}>
-            <Text style={cStyles.metaLabel}>현재가</Text>
-            <Text style={cStyles.metaValue}>{hasPrice ? `₩${item.currentPrice.toLocaleString()}` : '—'}</Text>
-          </View>
-          <View style={cStyles.metaDivider} />
-          <View style={cStyles.metaItem}>
-            <Text style={cStyles.metaLabel}>주당손익</Text>
-            <Text style={[cStyles.metaValue, { color: pnlColor }]}>
-              {hasPrice ? `${sign}₩${Math.round(perShare).toLocaleString()}` : '—'}
-            </Text>
-          </View>
-        </View>
-
-        {aiItem?.reason ? <Text style={cStyles.aiReason} numberOfLines={1}>▸ {aiItem.reason}</Text> : null}
-      </TouchableOpacity>
-
-      {/* 액션 버튼 */}
-      <View style={cStyles.actions}>
-        {onMove && (
-          <TouchableOpacity onPress={() => onMove(item)} style={cStyles.moveBtn}>
-            <Text style={cStyles.moveBtnText}>계좌이동</Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity onPress={() => onDelete(item.id, item.stock_name)} style={cStyles.delBtn}>
-          <Text style={cStyles.delBtnText}>삭제</Text>
-        </TouchableOpacity>
+        <Text style={[cStyles.pnlAmount, { color: pnlColor }]}>
+          {hasPrice ? `${sign}₩${Math.round(totalPnl).toLocaleString()}` : '—'}
+        </Text>
       </View>
-    </View>
+
+      {/* 2줄: 보유·평단·현재 / 수익률(주당) */}
+      <View style={cStyles.line2}>
+        <Text style={cStyles.meta} numberOfLines={1}>
+          {item.shares.toLocaleString()}주 · 평단 ₩{item.avg_price.toLocaleString()} · 현재 {hasPrice ? `₩${item.currentPrice.toLocaleString()}` : '—'}
+        </Text>
+        {hasPrice && (
+          <Text style={[cStyles.rate, { color: pnlColor }]}>
+            {sign}{pnlRate.toFixed(2)}% <Text style={cStyles.perShare}>({sign}₩{Math.round(perShare).toLocaleString()})</Text>
+          </Text>
+        )}
+      </View>
+
+      {aiItem?.reason ? <Text style={cStyles.aiReason} numberOfLines={1}>▸ {aiItem.reason}</Text> : null}
+    </TouchableOpacity>
   );
 }
 
 const cStyles = StyleSheet.create({
-  card: { paddingHorizontal: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  name: { fontSize: 16.5, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3 },
-  code: { fontSize: 11, color: '#5B6478', marginTop: 3 },
-  pnlAmount: { fontSize: 16, fontWeight: '800' },
-  pnlRate: { fontSize: 12.5, fontWeight: '700', marginTop: 2 },
-  metaGrid: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#0E1226', borderRadius: 12,
-    paddingVertical: 10, paddingHorizontal: 4,
-    borderWidth: 1, borderColor: '#1A2040',
-  },
-  metaItem: { flex: 1, alignItems: 'center' },
-  metaDivider: { width: 1, alignSelf: 'stretch', backgroundColor: '#1A2040', marginVertical: 2 },
-  metaLabel: { fontSize: 10, color: '#5B6478', marginBottom: 4, fontWeight: '600' },
-  metaValue: { fontSize: 13, fontWeight: '700', color: '#D8DEF0' },
-  aiReason: { fontSize: 11.5, color: '#7C89A6', marginTop: 9 },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 11 },
-  moveBtn: {
-    paddingHorizontal: 11, paddingVertical: 5, borderRadius: 8,
-    borderWidth: 1, borderColor: '#2E3A5C', backgroundColor: '#1A2138',
-  },
-  moveBtnText: { fontSize: 11.5, color: '#8FA8D8', fontWeight: '600' },
-  delBtn: {
-    paddingHorizontal: 11, paddingVertical: 5, borderRadius: 8,
-    borderWidth: 1, borderColor: '#3A2230', backgroundColor: '#241620',
-  },
-  delBtnText: { fontSize: 11.5, color: '#CC7788', fontWeight: '600' },
+  card: { paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
+  line1: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
+  name: { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3, flexShrink: 1 },
+  code: { fontSize: 10.5, color: '#5B6478' },
+  pnlAmount: { fontSize: 14.5, fontWeight: '800' },
+  line2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  meta: { fontSize: 11.5, color: '#7C89A6', flexShrink: 1, paddingRight: 8 },
+  rate: { fontSize: 12, fontWeight: '700' },
+  perShare: { fontSize: 11, fontWeight: '600' },
+  aiReason: { fontSize: 11, color: '#6B7280', marginTop: 5 },
 });
 
 // ── 계좌 탭바 ────────────────────────────────────────────────────────
@@ -533,7 +485,7 @@ const tabStyles = StyleSheet.create({
 });
 
 // ── 계좌 섹션 카드 ────────────────────────────────────────────────────
-function AccountSection({ account, holdings, diagnosis, navigation, onDelete, onMove }) {
+function AccountSection({ account, holdings, diagnosis, navigation, onActionMenu }) {
   const buy   = holdings.reduce((s, h) => s + h.avg_price * h.shares, 0);
   const eval_ = holdings.reduce((s, h) => s + (h.currentPrice ?? h.avg_price) * h.shares, 0);
   const pnl   = eval_ - buy;
@@ -576,8 +528,7 @@ function AccountSection({ account, holdings, diagnosis, navigation, onDelete, on
               key={item.id}
               item={item}
               aiItem={aiItem}
-              onDelete={onDelete}
-              onMove={onMove}
+              onActionMenu={onActionMenu}
               onPress={() => navigation.navigate('StockDetail', { symbol, name: item.stock_name })}
             />
           );
@@ -756,6 +707,42 @@ const pickStyles = StyleSheet.create({
   alias: { fontSize: 15, fontWeight: '700', color: '#E2E8F0' },
   broker: { fontSize: 12, color: '#6B7280' },
   current: { fontSize: 11, color: '#6B7280', fontWeight: '600', marginLeft: 'auto' },
+});
+
+// ── 종목 길게누르기 액션 시트 (이동 / 삭제) ──────────────────────────
+function HoldingActionModal({ visible, holding, onClose, onMove, onDelete }) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <TouchableOpacity style={styles.modalBg} activeOpacity={1} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle} numberOfLines={1}>{holding?.stock_name || '종목'}</Text>
+          <Text style={{ fontSize: 13, color: '#6B7280', marginBottom: 16 }}>원하는 작업을 선택하세요</Text>
+
+          <TouchableOpacity style={actStyles.btn} onPress={onMove} activeOpacity={0.8}>
+            <Text style={actStyles.btnText}>📁  계좌 이동</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[actStyles.btn, actStyles.btnDanger]} onPress={onDelete} activeOpacity={0.8}>
+            <Text style={[actStyles.btnText, { color: '#FF6B7E' }]}>🗑  삭제</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.cancelBtn, { marginTop: 6 }]} onPress={onClose}>
+            <Text style={styles.cancelBtnText}>취소</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const actStyles = StyleSheet.create({
+  btn: {
+    paddingVertical: 15, paddingHorizontal: 16, marginBottom: 10,
+    borderRadius: 12, borderWidth: 1, borderColor: '#252A47', backgroundColor: '#12172E',
+  },
+  btnDanger: { borderColor: '#3A2230', backgroundColor: '#1E1420' },
+  btnText: { fontSize: 15, fontWeight: '700', color: '#E2E8F0' },
 });
 
 // ── 붙여넣기 텍스트 파서 ────────────────────────────────────────────
@@ -1500,7 +1487,8 @@ export default function PortfolioScreen({ navigation }) {
   const [selectedAccountId, setSelectedAccountId] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [moveTarget, setMoveTarget] = useState(null); // 계좌 이동할 종목
+  const [moveTarget, setMoveTarget] = useState(null);     // 계좌 이동 시트 대상
+  const [actionTarget, setActionTarget] = useState(null); // long-press 액션 시트 대상
   const [loading, setLoading] = useState(false);
   const [diagnosis, setDiagnosis] = useState(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
@@ -1755,8 +1743,7 @@ export default function PortfolioScreen({ navigation }) {
                 holdings={ah}
                 diagnosis={diagnosis}
                 navigation={navigation}
-                onDelete={handleDelete}
-                onMove={setMoveTarget}
+                onActionMenu={setActionTarget}
               />
             ))}
             {unassigned.length > 0 && (
@@ -1765,8 +1752,7 @@ export default function PortfolioScreen({ navigation }) {
                 holdings={unassigned}
                 diagnosis={diagnosis}
                 navigation={navigation}
-                onDelete={handleDelete}
-                onMove={setMoveTarget}
+                onActionMenu={setActionTarget}
               />
             )}
           </>
@@ -1776,8 +1762,7 @@ export default function PortfolioScreen({ navigation }) {
             holdings={visibleHoldings}
             diagnosis={diagnosis}
             navigation={navigation}
-            onDelete={handleDelete}
-            onMove={setMoveTarget}
+            onActionMenu={setActionTarget}
           />
         )}
 
@@ -1803,6 +1788,14 @@ export default function PortfolioScreen({ navigation }) {
         visible={showAccountModal}
         onClose={() => setShowAccountModal(false)}
         onCreate={handleCreateAccount}
+      />
+
+      <HoldingActionModal
+        visible={!!actionTarget}
+        holding={actionTarget}
+        onClose={() => setActionTarget(null)}
+        onMove={() => { const t = actionTarget; setActionTarget(null); setMoveTarget(t); }}
+        onDelete={() => { const t = actionTarget; setActionTarget(null); if (t) handleDelete(t.id, t.stock_name); }}
       />
 
       <AccountPickerModal
