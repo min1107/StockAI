@@ -388,32 +388,54 @@ function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
       delayLongPress={280}
       activeOpacity={0.85}
     >
-      {/* 1줄: 종목명 + 코드 / 평가손익 */}
-      <View style={cStyles.line1}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingRight: 8 }}>
-          <Text style={cStyles.name} numberOfLines={1}>{item.stock_name}</Text>
-          <Text style={cStyles.code}>{item.stock_code}</Text>
-          {aiItem && (
-            <View style={[styles.actionBadge, { borderColor: (actionColor || '#6B7280') + '80', backgroundColor: (actionColor || '#6B7280') + '15' }]}>
-              <Text style={[styles.actionBadgeText, { color: actionColor || '#6B7280' }]}>{aiItem.action}</Text>
-            </View>
+      {/* 헤더: 종목명 + 코드 / 평가손익 + 수익률 */}
+      <View style={cStyles.header}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Text style={cStyles.name} numberOfLines={1}>{item.stock_name}</Text>
+            <Text style={cStyles.code}>{item.stock_code}</Text>
+            {aiItem && (
+              <View style={[styles.actionBadge, { borderColor: (actionColor || '#6B7280') + '80', backgroundColor: (actionColor || '#6B7280') + '15' }]}>
+                <Text style={[styles.actionBadgeText, { color: actionColor || '#6B7280' }]}>{aiItem.action}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={[cStyles.pnlAmount, { color: pnlColor }]}>
+            {hasPrice ? `${sign}₩${Math.round(totalPnl).toLocaleString()}` : '—'}
+          </Text>
+          {hasPrice && (
+            <Text style={[cStyles.pnlRate, { color: pnlColor }]}>
+              {sign}{pnlRate.toFixed(2)}% {isUp ? '▲' : '▼'}
+            </Text>
           )}
         </View>
-        <Text style={[cStyles.pnlAmount, { color: pnlColor }]}>
-          {hasPrice ? `${sign}₩${Math.round(totalPnl).toLocaleString()}` : '—'}
-        </Text>
       </View>
 
-      {/* 2줄: 보유·평단·현재 / 수익률(주당) */}
-      <View style={cStyles.line2}>
-        <Text style={cStyles.meta} numberOfLines={1}>
-          {item.shares.toLocaleString()}주 · 평단 ₩{item.avg_price.toLocaleString()} · 현재 {hasPrice ? `₩${item.currentPrice.toLocaleString()}` : '—'}
-        </Text>
-        {hasPrice && (
-          <Text style={[cStyles.rate, { color: pnlColor }]}>
-            {sign}{pnlRate.toFixed(2)}% <Text style={cStyles.perShare}>({sign}₩{Math.round(perShare).toLocaleString()})</Text>
+      {/* 메타 그리드: 보유 · 평단가 · 현재가 · 주당손익 */}
+      <View style={cStyles.metaGrid}>
+        <View style={cStyles.metaItem}>
+          <Text style={cStyles.metaLabel}>보유</Text>
+          <Text style={cStyles.metaValue}>{item.shares.toLocaleString()}주</Text>
+        </View>
+        <View style={cStyles.metaDivider} />
+        <View style={cStyles.metaItem}>
+          <Text style={cStyles.metaLabel}>평단가</Text>
+          <Text style={cStyles.metaValue}>₩{item.avg_price.toLocaleString()}</Text>
+        </View>
+        <View style={cStyles.metaDivider} />
+        <View style={cStyles.metaItem}>
+          <Text style={cStyles.metaLabel}>현재가</Text>
+          <Text style={cStyles.metaValue}>{hasPrice ? `₩${item.currentPrice.toLocaleString()}` : '—'}</Text>
+        </View>
+        <View style={cStyles.metaDivider} />
+        <View style={cStyles.metaItem}>
+          <Text style={cStyles.metaLabel}>주당손익</Text>
+          <Text style={[cStyles.metaValue, { color: pnlColor }]}>
+            {hasPrice ? `${sign}₩${Math.round(perShare).toLocaleString()}` : '—'}
           </Text>
-        )}
+        </View>
       </View>
 
       {aiItem?.reason ? <Text style={cStyles.aiReason} numberOfLines={1}>▸ {aiItem.reason}</Text> : null}
@@ -422,16 +444,23 @@ function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
 }
 
 const cStyles = StyleSheet.create({
-  card: { paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
-  line1: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
-  name: { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3, flexShrink: 1 },
+  card: { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 9 },
+  name: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3, flexShrink: 1 },
   code: { fontSize: 10.5, color: '#5B6478' },
-  pnlAmount: { fontSize: 14.5, fontWeight: '800' },
-  line2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  meta: { fontSize: 11.5, color: '#7C89A6', flexShrink: 1, paddingRight: 8 },
-  rate: { fontSize: 12, fontWeight: '700' },
-  perShare: { fontSize: 11, fontWeight: '600' },
-  aiReason: { fontSize: 11, color: '#6B7280', marginTop: 5 },
+  pnlAmount: { fontSize: 15.5, fontWeight: '800' },
+  pnlRate: { fontSize: 12, fontWeight: '700', marginTop: 1 },
+  metaGrid: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#0E1226', borderRadius: 10,
+    paddingVertical: 8, paddingHorizontal: 4,
+    borderWidth: 1, borderColor: '#1A2040',
+  },
+  metaItem: { flex: 1, alignItems: 'center' },
+  metaDivider: { width: 1, alignSelf: 'stretch', backgroundColor: '#1A2040', marginVertical: 1 },
+  metaLabel: { fontSize: 9.5, color: '#5B6478', marginBottom: 2, fontWeight: '600' },
+  metaValue: { fontSize: 12.5, fontWeight: '700', color: '#D8DEF0' },
+  aiReason: { fontSize: 11, color: '#6B7280', marginTop: 6 },
 });
 
 // ── 계좌 탭바 ────────────────────────────────────────────────────────
