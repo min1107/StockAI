@@ -22,7 +22,9 @@ import { useAuth } from '../context/AuthContext';
 import AIChatModal from '../components/AIChatModal';
 import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, deleteAccount, moveHolding } from '../services/portfolioAPI';
 import { fetchStockDetail, searchStocks } from '../services/stockAPI';
+import { getMacroContext } from '../services/kisAPI';
 import { analyzePortfolio } from '../services/groqAPI';
+import { toSymbol, currencyOf, fmtMoney, toKRW, DEFAULT_FX } from '../utils/market';
 import { loadNotifSettings, checkPnlAlert, checkBigMovementAlert } from '../services/notificationService';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -126,14 +128,14 @@ function PnLChart({ history }) {
 // ── 보유 비중 파이차트 ─────────────────────────────────────────────
 const PIE_COLORS = ['#00D9FF', '#00FF88', '#FFB800', '#FF4466', '#A78BFA', '#FF6B35', '#4ADE80', '#60A5FA', '#F472B6', '#34D399'];
 
-function PortfolioPieChart({ holdings }) {
+function PortfolioPieChart({ holdings, fxRate }) {
   if (!holdings || holdings.length < 2) return null;
 
-  const totalEval = holdings.reduce((s, h) => s + (h.currentPrice ?? h.avg_price) * h.shares, 0);
+  const totalEval = holdings.reduce((s, h) => s + toKRW(h.stock_code, (h.currentPrice ?? h.avg_price) * h.shares, fxRate), 0);
   if (totalEval === 0) return null;
 
   const data = holdings.map((h, i) => {
-    const value = (h.currentPrice ?? h.avg_price) * h.shares;
+    const value = toKRW(h.stock_code, (h.currentPrice ?? h.avg_price) * h.shares, fxRate);
     const pct = ((value / totalEval) * 100).toFixed(1);
     return {
       name: `${h.stock_name} ${pct}%`,
@@ -177,13 +179,13 @@ const SECTOR_COLORS = ['#00D9FF', '#A78BFA', '#00FF88', '#FFB800', '#FF4466', '#
 const ACCOUNT_COLORS = ['#00D9FF', '#00FF88', '#FFB800', '#A78BFA', '#FF6B35', '#FF4466', '#4ADE80', '#F472B6'];
 const BROKER_OPTIONS = ['키움증권', '미래에셋증권', '한국투자증권', 'NH투자증권', '삼성증권', 'KB증권', '신한투자증권', '토스증권', '카카오페이증권', '기타'];
 
-function SectorPieChart({ holdings }) {
+function SectorPieChart({ holdings, fxRate }) {
   if (!holdings || holdings.length < 2) return null;
 
   const sectorMap = {};
   for (const h of holdings) {
     const sectorName = h.sector || '기타';
-    const value = (h.currentPrice ?? h.avg_price) * h.shares;
+    const value = toKRW(h.stock_code, (h.currentPrice ?? h.avg_price) * h.shares, fxRate);
     sectorMap[sectorName] = (sectorMap[sectorName] || 0) + value;
   }
 
@@ -379,6 +381,8 @@ function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
   const pnlColor  = isUp == null ? '#8892A4' : isUp ? '#00FF88' : '#FF4466';
   const sign      = isUp ? '+' : '';
   const actionColor = aiItem ? (ACTION_COLOR[aiItem.action] || '#6B7280') : null;
+  const code      = item.stock_code;
+  const fmtSigned = (v) => (v >= 0 ? '+' : '-') + fmtMoney(code, Math.abs(v));
 
   return (
     <TouchableOpacity
@@ -403,7 +407,7 @@ function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={[cStyles.pnlAmount, { color: pnlColor }]}>
-            {hasPrice ? `${sign}₩${Math.round(totalPnl).toLocaleString()}` : '—'}
+            {hasPrice ? fmtSigned(totalPnl) : '—'}
           </Text>
           {hasPrice && (
             <Text style={[cStyles.pnlRate, { color: pnlColor }]}>
@@ -422,18 +426,18 @@ function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
         <View style={cStyles.metaDivider} />
         <View style={cStyles.metaItem}>
           <Text style={cStyles.metaLabel}>평단가</Text>
-          <Text style={cStyles.metaValue}>₩{item.avg_price.toLocaleString()}</Text>
+          <Text style={cStyles.metaValue}>{fmtMoney(code, item.avg_price)}</Text>
         </View>
         <View style={cStyles.metaDivider} />
         <View style={cStyles.metaItem}>
           <Text style={cStyles.metaLabel}>현재가</Text>
-          <Text style={cStyles.metaValue}>{hasPrice ? `₩${item.currentPrice.toLocaleString()}` : '—'}</Text>
+          <Text style={cStyles.metaValue}>{hasPrice ? fmtMoney(code, item.currentPrice) : '—'}</Text>
         </View>
         <View style={cStyles.metaDivider} />
         <View style={cStyles.metaItem}>
           <Text style={cStyles.metaLabel}>주당손익</Text>
           <Text style={[cStyles.metaValue, { color: pnlColor }]}>
-            {hasPrice ? `${sign}₩${Math.round(perShare).toLocaleString()}` : '—'}
+            {hasPrice ? fmtSigned(perShare) : '—'}
           </Text>
         </View>
       </View>
@@ -514,9 +518,10 @@ const tabStyles = StyleSheet.create({
 });
 
 // ── 계좌 섹션 카드 ────────────────────────────────────────────────────
-function AccountSection({ account, holdings, diagnosis, navigation, onActionMenu }) {
-  const buy   = holdings.reduce((s, h) => s + h.avg_price * h.shares, 0);
-  const eval_ = holdings.reduce((s, h) => s + (h.currentPrice ?? h.avg_price) * h.shares, 0);
+function AccountSection({ account, holdings, diagnosis, navigation, onActionMenu, fxRate }) {
+  // 계좌 안에 한국·미국 섞일 수 있으므로 원화 환산 합산
+  const buy   = holdings.reduce((s, h) => s + toKRW(h.stock_code, h.avg_price * h.shares, fxRate), 0);
+  const eval_ = holdings.reduce((s, h) => s + toKRW(h.stock_code, (h.currentPrice ?? h.avg_price) * h.shares, fxRate), 0);
   const pnl   = eval_ - buy;
   const rate  = buy > 0 ? (pnl / buy) * 100 : 0;
   const isUp  = pnl >= 0;
@@ -551,7 +556,7 @@ function AccountSection({ account, holdings, diagnosis, navigation, onActionMenu
         holdings.map(item => {
           const baseCode = item.stock_code.split('.')[0];
           const aiItem = diagnosis?.items?.find(d => d.code === baseCode || d.code === item.stock_code);
-          const symbol = item.stock_code.includes('.') ? item.stock_code : item.stock_code + '.KS';
+          const symbol = toSymbol(item.stock_code);
           return (
             <CompactHoldingRow
               key={item.id}
@@ -882,6 +887,7 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
   const [mode, setMode] = useState(null); // null=선택화면 | 'manual' | 'csv' | 'image'
 
   // 직접입력 state
+  const [market, setMarket] = useState('KR'); // 'KR' | 'US'
   const [stockCode, setStockCode] = useState('');
   const [stockName, setStockName] = useState('');
   const [shares, setShares] = useState('');
@@ -908,6 +914,7 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
 
   const reset = () => {
     setMode(null);
+    setMarket('KR');
     setStockCode(''); setStockName(''); setShares(''); setAvgPrice('');
     setCsvItems([]); setCsvError(''); setSelected({});
     setPasteText(''); setPasteRows([]);
@@ -922,13 +929,17 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
       Alert.alert('입력 오류', '모든 항목을 입력해주세요.');
       return;
     }
+    const isUS = market === 'US';
+    const code = isUS ? stockCode.trim().toUpperCase() : stockCode.trim();
     const sharesNum = parseInt(shares.replace(/,/g, ''));
-    const priceNum  = parseInt(avgPrice.replace(/,/g, ''));
+    const priceNum  = isUS ? parseFloat(avgPrice.replace(/,/g, '')) : parseInt(avgPrice.replace(/,/g, ''));
+    if (!isUS && !/^\d{6}$/.test(code)) { Alert.alert('입력 오류', '국내 종목코드는 6자리 숫자입니다.'); return; }
+    if (isUS && !/^[A-Z.]{1,6}$/.test(code)) { Alert.alert('입력 오류', '미국 티커를 확인해주세요. (예: AAPL)'); return; }
     if (isNaN(sharesNum) || sharesNum <= 0) { Alert.alert('입력 오류', '수량을 확인해주세요.'); return; }
     if (isNaN(priceNum)  || priceNum  <= 0) { Alert.alert('입력 오류', '평균 매입가를 확인해주세요.'); return; }
     setLoading(true);
     try {
-      await onAdd(stockCode.trim(), stockName.trim(), sharesNum, priceNum, targetAccountId);
+      await onAdd(code, stockName.trim(), sharesNum, priceNum, targetAccountId);
       reset(); onClose();
     } catch (e) {
       Alert.alert('오류', e.message);
@@ -1161,15 +1172,35 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                 ) : null;
               })()}
 
+              {/* 시장 선택 (국내 / 미국) */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>종목코드</Text>
-                <TextInput style={styles.modalInput} placeholder="예: 005930"
+                <Text style={styles.inputLabel}>시장</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[['KR', '🇰🇷 국내'], ['US', '🇺🇸 미국']].map(([m, label]) => (
+                    <TouchableOpacity
+                      key={m}
+                      style={[addStyles.marketBtn, market === m && addStyles.marketBtnActive]}
+                      onPress={() => setMarket(m)}
+                    >
+                      <Text style={[addStyles.marketBtnText, market === m && addStyles.marketBtnTextActive]}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{market === 'US' ? '티커' : '종목코드'}</Text>
+                <TextInput style={styles.modalInput}
+                  placeholder={market === 'US' ? '예: AAPL' : '예: 005930'}
                   placeholderTextColor="#4A5568" value={stockCode}
-                  onChangeText={setStockCode} keyboardType="number-pad" maxLength={6} />
+                  onChangeText={t => setStockCode(market === 'US' ? t.toUpperCase() : t)}
+                  keyboardType={market === 'US' ? 'default' : 'number-pad'}
+                  autoCapitalize="characters"
+                  maxLength={market === 'US' ? 6 : 6} />
               </View>
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>종목명</Text>
-                <TextInput style={styles.modalInput} placeholder="예: 삼성전자"
+                <TextInput style={styles.modalInput} placeholder={market === 'US' ? '예: Apple' : '예: 삼성전자'}
                   placeholderTextColor="#4A5568" value={stockName} onChangeText={setStockName} />
               </View>
               <View style={styles.inputRow}>
@@ -1180,16 +1211,20 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                     onChangeText={setShares} keyboardType="numeric" />
                 </View>
                 <View style={[styles.inputGroup, { flex: 1.4 }]}>
-                  <Text style={styles.inputLabel}>평균 매입가 (원)</Text>
-                  <TextInput style={styles.modalInput} placeholder="75000"
+                  <Text style={styles.inputLabel}>평균 매입가 {market === 'US' ? '($)' : '(원)'}</Text>
+                  <TextInput style={styles.modalInput} placeholder={market === 'US' ? '178.50' : '75000'}
                     placeholderTextColor="#4A5568" value={avgPrice}
-                    onChangeText={setAvgPrice} keyboardType="numeric" />
+                    onChangeText={setAvgPrice} keyboardType={market === 'US' ? 'decimal-pad' : 'numeric'} />
                 </View>
               </View>
-              {shares && avgPrice && !isNaN(parseInt(shares)) && !isNaN(parseInt(avgPrice)) && (
+              {shares && avgPrice && !isNaN(parseFloat(shares)) && !isNaN(parseFloat(avgPrice)) && (
                 <View style={styles.previewBox}>
                   <Text style={styles.previewLabel}>예상 매입금액</Text>
-                  <Text style={styles.previewValue}>₩{(parseInt(shares) * parseInt(avgPrice)).toLocaleString()}</Text>
+                  <Text style={styles.previewValue}>
+                    {market === 'US'
+                      ? `$${(parseFloat(shares) * parseFloat(avgPrice)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : `₩${(parseInt(shares) * parseInt(avgPrice)).toLocaleString()}`}
+                  </Text>
                 </View>
               )}
               <View style={styles.modalBtnRow}>
@@ -1372,6 +1407,13 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
 const addStyles = StyleSheet.create({
   backBtn: { marginBottom: 12 },
   backText: { color: '#A78BFA', fontSize: 15, fontWeight: '600' },
+  marketBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: 11,
+    borderRadius: 10, borderWidth: 1, borderColor: '#252A47', backgroundColor: '#0A0E27',
+  },
+  marketBtnActive: { borderColor: '#00D9FF80', backgroundColor: '#00D9FF18' },
+  marketBtnText: { fontSize: 14, color: '#8892A4', fontWeight: '700' },
+  marketBtnTextActive: { color: '#00D9FF' },
   optionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: '#0A0E27', borderRadius: 14, padding: 16,
@@ -1523,6 +1565,7 @@ export default function PortfolioScreen({ navigation }) {
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
   const [pnlHistory, setPnlHistory] = useState([]);
   const [chatVisible, setChatVisible] = useState(false);
+  const [fxRate, setFxRate] = useState(DEFAULT_FX); // USD/KRW 환율 (미국주식 원화환산용)
 
   const loadPortfolio = useCallback(async () => {
     if (!user) return;
@@ -1530,22 +1573,30 @@ export default function PortfolioScreen({ navigation }) {
     try {
       const [data, accs] = await Promise.all([getHoldings(user.id), getAccounts(user.id)]);
       setAccounts(accs);
+
+      // 환율 조회 (미국주식 원화환산용) — 실패해도 기본값으로 진행
+      let fx = fxRate;
+      try {
+        const macro = await getMacroContext();
+        const rate = typeof macro?.macro?.usdKrw === 'number' ? macro.macro.usdKrw : macro?.macro?.usdKrw?.price;
+        if (rate && rate > 0) { fx = rate; setFxRate(rate); }
+      } catch {}
+
       const withPrices = await Promise.all(
         data.map(async (item) => {
           try {
-            // stock_code는 순수 6자리(예: 005930)로 저장됨 → 한국주식 인식되도록 .KS 부착
-            const symbol = item.stock_code.includes('.') ? item.stock_code : item.stock_code + '.KS';
-            const detail = await fetchStockDetail(symbol);
-            return { ...item, currentPrice: detail?.regularMarketPrice ?? null, sector: detail?.sector ?? null };
+            // 6자리 숫자=한국(.KS 부착), 그 외=미국 티커 그대로
+            const detail = await fetchStockDetail(toSymbol(item.stock_code));
+            return { ...item, currentPrice: detail?.regularMarketPrice ?? null, sector: detail?.sector ?? null, currency: currencyOf(item.stock_code) };
           } catch {
-            return { ...item, currentPrice: null, sector: null };
+            return { ...item, currentPrice: null, sector: null, currency: currencyOf(item.stock_code) };
           }
         })
       );
       setHoldings(withPrices);
 
-      // 오늘 총 평가액 스냅샷 저장
-      const eval_ = withPrices.reduce((s, h) => s + (h.currentPrice ?? h.avg_price) * h.shares, 0);
+      // 오늘 총 평가액 스냅샷 저장 (원화 환산 기준)
+      const eval_ = withPrices.reduce((s, h) => s + toKRW(h.stock_code, (h.currentPrice ?? h.avg_price) * h.shares, fx), 0);
       if (eval_ > 0) await saveSnapshot(eval_);
 
       // 차트용 히스토리 로드
@@ -1652,8 +1703,9 @@ export default function PortfolioScreen({ navigation }) {
     }
   };
 
-  const totalBuy  = holdings.reduce((s, h) => s + h.avg_price * h.shares, 0);
-  const totalEval = holdings.reduce((s, h) => s + (h.currentPrice ?? h.avg_price) * h.shares, 0);
+  // 한국·미국 혼합 — 모두 원화로 환산해 합산
+  const totalBuy  = holdings.reduce((s, h) => s + toKRW(h.stock_code, h.avg_price * h.shares, fxRate), 0);
+  const totalEval = holdings.reduce((s, h) => s + toKRW(h.stock_code, (h.currentPrice ?? h.avg_price) * h.shares, fxRate), 0);
   const totalPnl  = totalEval - totalBuy;
   const totalRate = totalBuy > 0 ? (totalPnl / totalBuy) * 100 : 0;
   const isPositive = totalPnl >= 0;
@@ -1749,10 +1801,10 @@ export default function PortfolioScreen({ navigation }) {
         )}
 
         {/* 보유 비중 파이차트 */}
-        <PortfolioPieChart holdings={visibleHoldings} />
+        <PortfolioPieChart holdings={visibleHoldings} fxRate={fxRate} />
 
         {/* 섹터 분산 파이차트 */}
-        <SectorPieChart holdings={visibleHoldings} />
+        <SectorPieChart holdings={visibleHoldings} fxRate={fxRate} />
 
         {/* 보유 종목 — 계좌별 그룹 or 단일 계좌 필터 */}
         {loading ? (
@@ -1773,6 +1825,7 @@ export default function PortfolioScreen({ navigation }) {
                 diagnosis={diagnosis}
                 navigation={navigation}
                 onActionMenu={setActionTarget}
+                fxRate={fxRate}
               />
             ))}
             {unassigned.length > 0 && (
@@ -1782,6 +1835,7 @@ export default function PortfolioScreen({ navigation }) {
                 diagnosis={diagnosis}
                 navigation={navigation}
                 onActionMenu={setActionTarget}
+                fxRate={fxRate}
               />
             )}
           </>
@@ -1792,6 +1846,7 @@ export default function PortfolioScreen({ navigation }) {
             diagnosis={diagnosis}
             navigation={navigation}
             onActionMenu={setActionTarget}
+            fxRate={fxRate}
           />
         )}
 
