@@ -1396,7 +1396,9 @@ export default function PortfolioScreen({ navigation }) {
       const withPrices = await Promise.all(
         data.map(async (item) => {
           try {
-            const detail = await fetchStockDetail(item.stock_code);
+            // stock_code는 순수 6자리(예: 005930)로 저장됨 → 한국주식 인식되도록 .KS 부착
+            const symbol = item.stock_code.includes('.') ? item.stock_code : item.stock_code + '.KS';
+            const detail = await fetchStockDetail(symbol);
             return { ...item, currentPrice: detail?.regularMarketPrice ?? null, sector: detail?.sector ?? null };
           } catch {
             return { ...item, currentPrice: null, sector: null };
