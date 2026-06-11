@@ -129,30 +129,25 @@ export const fetchStockDetail = async (symbol) => {
         currency: 'KRW',
       };
     } else {
-      // 미국 주식은 Yahoo Finance 사용
-      const response = await axios.get(`${BASE_URL}/v8/finance/chart/${symbol}`, {
-        params: {
-          interval: '1d',
-          range: '1mo',
-        },
+      // 미국 주식: 서버 프록시 경유 (브라우저 PWA의 Yahoo CORS 회피)
+      const response = await axios.get(`${SERVER}/api/us/quote`, {
+        params: { symbol },
+        timeout: 15000,
       });
-
-      const result = response.data.chart.result[0];
-      const meta = result.meta;
-
+      const d = response.data;
       return {
-        symbol: meta.symbol,
-        regularMarketPrice: meta.regularMarketPrice,
-        regularMarketChange: meta.regularMarketPrice - meta.previousClose,
-        regularMarketChangePercent: ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100,
-        regularMarketOpen: meta.regularMarketOpen,
-        regularMarketDayHigh: meta.regularMarketDayHigh,
-        regularMarketDayLow: meta.regularMarketDayLow,
-        regularMarketVolume: meta.regularMarketVolume,
-        marketCap: meta.marketCap,
-        fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
-        fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
-        currency: meta.currency,
+        symbol: d.symbol,
+        regularMarketPrice: d.currentPrice,
+        regularMarketChange: d.change,
+        regularMarketChangePercent: d.changeRate,
+        regularMarketOpen: d.open,
+        regularMarketDayHigh: d.high,
+        regularMarketDayLow: d.low,
+        regularMarketVolume: d.volume,
+        marketCap: null,
+        fiftyTwoWeekHigh: d.fiftyTwoWeekHigh,
+        fiftyTwoWeekLow: d.fiftyTwoWeekLow,
+        currency: d.currency,
       };
     }
   } catch (error) {

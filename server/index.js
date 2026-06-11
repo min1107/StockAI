@@ -40,6 +40,7 @@ router.all('/cron/news',       require('./api/cron/news'));
 router.all('/cron/supply',     require('./api/cron/supply'));
 router.all('/cron/screen',     require('./api/cron/screen'));
 router.all('/debug/cache',     require('./api/debug/cache'));
+router.all('/us/quote',        require('./api/us/quote'));
 router.all('/push/subscribe',  require('./api/push/subscribe'));
 router.all('/push/test',       require('./api/push/test'));
 
