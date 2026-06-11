@@ -18,6 +18,12 @@ import {
   applyAllSchedules,
   DEFAULT_SETTINGS,
 } from '../services/notificationService';
+import {
+  isWebPushSupported,
+  getNotificationPermission,
+  enableWebPush,
+  sendTestPush,
+} from '../services/webPush';
 
 const APP_VERSION = '1.0.0';
 const ONBOARDING_DONE_KEY = '@StockAI:onboardingDone';
@@ -108,10 +114,40 @@ export default function SettingsScreen({ navigation }) {
   const [clearing, setClearing] = useState(false);
   const [notif, setNotif] = useState(DEFAULT_SETTINGS);
   const [permGranted, setPermGranted] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushPerm, setPushPerm] = useState('default'); // 'default'|'granted'|'denied'|'unsupported'
+  const [pushBusy, setPushBusy] = useState(false);
 
   useEffect(() => {
     loadNotifSettings().then(s => setNotif(s));
+    setPushSupported(isWebPushSupported());
+    setPushPerm(getNotificationPermission());
   }, []);
+
+  const handleEnableWebPush = async () => {
+    setPushBusy(true);
+    try {
+      await enableWebPush();
+      setPushPerm('granted');
+      Alert.alert('알림 켜짐', '웹 푸시가 켜졌습니다. 아래 "테스트 알림 보내기"로 확인해보세요.');
+    } catch (e) {
+      Alert.alert('알림 켜기 실패', e.message);
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleTestPush = async () => {
+    setPushBusy(true);
+    try {
+      const r = await sendTestPush();
+      Alert.alert('테스트 발송 완료', `구독자 ${r.total ?? 0}명에게 발송 (성공 ${r.sent ?? 0}).\n잠시 후 알림이 도착하는지 확인하세요.`);
+    } catch (e) {
+      Alert.alert('테스트 실패', e.message);
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   // 설정 변경 → 저장 + 재스케줄
   const updateNotif = async (key, val) => {
@@ -189,6 +225,42 @@ export default function SettingsScreen({ navigation }) {
             </>
           ) : (
             <Row icon="🔐" label="로그인 / 회원가입" onPress={() => navigation.navigate('Auth')} />
+          )}
+        </View>
+
+        {/* ── 푸시 알림 (앱 꺼도 수신) ── */}
+        <SectionHeader title="푸시 알림" desc="앱을 꺼놔도 서버에서 알림을 보냅니다 (iOS는 홈 화면에 추가된 상태에서)" />
+        <View style={styles.card}>
+          {!pushSupported ? (
+            <Row
+              icon="ℹ️"
+              label="이 기기에서는 사용 불가"
+              sublabel="iOS는 16.4 이상 + 홈 화면에 추가한 앱에서만 됩니다"
+            />
+          ) : pushPerm === 'denied' ? (
+            <Row
+              icon="🚫"
+              label="알림 권한이 차단됨"
+              sublabel="기기 설정 > StockAI > 알림에서 허용해주세요"
+            />
+          ) : pushPerm === 'granted' ? (
+            <>
+              <Row icon="✅" label="푸시 알림 켜짐" sublabel="앱을 꺼도 알림이 도착합니다" />
+              <Divider />
+              <Row
+                icon="📨"
+                label={pushBusy ? '발송 중...' : '테스트 알림 보내기'}
+                sublabel="지금 바로 알림이 오는지 확인"
+                onPress={pushBusy ? null : handleTestPush}
+              />
+            </>
+          ) : (
+            <Row
+              icon="🔔"
+              label={pushBusy ? '켜는 중...' : '웹 푸시 알림 켜기'}
+              sublabel="탭하면 알림 권한을 요청합니다"
+              onPress={pushBusy ? null : handleEnableWebPush}
+            />
           )}
         </View>
 

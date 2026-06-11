@@ -8,6 +8,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/context/AuthContext';
 import { setupNotifHandler } from './src/services/notificationService';
+import { injectPWAMeta, registerServiceWorker } from './src/services/webPush';
 import HomeScreen from './src/screens/HomeScreen';
 import StockDetailScreen from './src/screens/StockDetailScreen';
 import PortfolioScreen from './src/screens/PortfolioScreen';
@@ -103,6 +104,9 @@ export default function App() {
     AsyncStorage.getItem(ONBOARDING_DONE_KEY).then(value => {
       setOnboardingDone(value === 'done');
     });
+    // 웹(PWA): manifest/Apple 메타 주입 + 서비스워커 등록
+    injectPWAMeta();
+    registerServiceWorker();
   }, []);
 
   // 로딩 중 스플래시
