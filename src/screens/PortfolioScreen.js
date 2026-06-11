@@ -371,64 +371,115 @@ function HoldingCard({ item, aiItem, onDelete, onPress }) {
 
 // ── 계좌별 종목 행 (compact 2-line) ───────────────────────────────
 function CompactHoldingRow({ item, aiItem, onPress, onDelete, onMove }) {
-  const pnlRate = item.currentPrice != null
-    ? ((item.currentPrice - item.avg_price) / item.avg_price) * 100 : null;
-  const isUp = pnlRate != null ? pnlRate >= 0 : null;
-  const pnlColor = isUp == null ? '#FFFFFF' : isUp ? '#00FF88' : '#FF4466';
+  const hasPrice  = item.currentPrice != null;
+  const perShare  = hasPrice ? item.currentPrice - item.avg_price : null;        // 한 주당 손익
+  const totalPnl  = hasPrice ? perShare * item.shares : null;                    // 평가손익
+  const pnlRate   = hasPrice ? (perShare / item.avg_price) * 100 : null;         // 수익률
+  const isUp      = perShare != null ? perShare >= 0 : null;
+  const pnlColor  = isUp == null ? '#8892A4' : isUp ? '#00FF88' : '#FF4466';
+  const sign      = isUp ? '+' : '';
   const actionColor = aiItem ? (ACTION_COLOR[aiItem.action] || '#6B7280') : null;
 
   return (
-    <TouchableOpacity style={cStyles.row} onPress={onPress} activeOpacity={0.85}>
-      <View style={cStyles.line1}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-          <Text style={cStyles.name}>{item.stock_name}</Text>
-          {aiItem && (
-            <View style={[styles.actionBadge, { borderColor: (actionColor || '#6B7280') + '80', backgroundColor: (actionColor || '#6B7280') + '15' }]}>
-              <Text style={[styles.actionBadgeText, { color: actionColor || '#6B7280' }]}>{aiItem.action}</Text>
+    <View style={cStyles.card}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+        {/* 헤더: 종목명 + 코드 / 평가손익 + 수익률 */}
+        <View style={cStyles.header}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={cStyles.name}>{item.stock_name}</Text>
+              {aiItem && (
+                <View style={[styles.actionBadge, { borderColor: (actionColor || '#6B7280') + '80', backgroundColor: (actionColor || '#6B7280') + '15' }]}>
+                  <Text style={[styles.actionBadgeText, { color: actionColor || '#6B7280' }]}>{aiItem.action}</Text>
+                </View>
+              )}
             </View>
-          )}
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {pnlRate != null && (
-            <Text style={[cStyles.pnlRate, { color: pnlColor }]}>
-              {isUp ? '+' : ''}{pnlRate.toFixed(2)}% {isUp ? '▲' : '▼'}
+            <Text style={cStyles.code}>{item.stock_code}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={[cStyles.pnlAmount, { color: pnlColor }]}>
+              {hasPrice ? `${sign}₩${Math.round(totalPnl).toLocaleString()}` : '—'}
             </Text>
-          )}
-          {onMove && (
-            <TouchableOpacity onPress={() => onMove(item)} style={cStyles.moveBtn}>
-              <Text style={cStyles.moveBtnText}>계좌이동</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={() => onDelete(item.id, item.stock_name)} style={styles.deleteBtn}>
-            <Text style={styles.deleteBtnText}>삭제</Text>
-          </TouchableOpacity>
+            {hasPrice && (
+              <Text style={[cStyles.pnlRate, { color: pnlColor }]}>
+                {sign}{pnlRate.toFixed(2)}% {isUp ? '▲' : '▼'}
+              </Text>
+            )}
+          </View>
         </View>
+
+        {/* 메타 그리드: 보유 · 평단가 · 현재가 · 주당손익 */}
+        <View style={cStyles.metaGrid}>
+          <View style={cStyles.metaItem}>
+            <Text style={cStyles.metaLabel}>보유</Text>
+            <Text style={cStyles.metaValue}>{item.shares.toLocaleString()}주</Text>
+          </View>
+          <View style={cStyles.metaDivider} />
+          <View style={cStyles.metaItem}>
+            <Text style={cStyles.metaLabel}>평단가</Text>
+            <Text style={cStyles.metaValue}>₩{item.avg_price.toLocaleString()}</Text>
+          </View>
+          <View style={cStyles.metaDivider} />
+          <View style={cStyles.metaItem}>
+            <Text style={cStyles.metaLabel}>현재가</Text>
+            <Text style={cStyles.metaValue}>{hasPrice ? `₩${item.currentPrice.toLocaleString()}` : '—'}</Text>
+          </View>
+          <View style={cStyles.metaDivider} />
+          <View style={cStyles.metaItem}>
+            <Text style={cStyles.metaLabel}>주당손익</Text>
+            <Text style={[cStyles.metaValue, { color: pnlColor }]}>
+              {hasPrice ? `${sign}₩${Math.round(perShare).toLocaleString()}` : '—'}
+            </Text>
+          </View>
+        </View>
+
+        {aiItem?.reason ? <Text style={cStyles.aiReason} numberOfLines={1}>▸ {aiItem.reason}</Text> : null}
+      </TouchableOpacity>
+
+      {/* 액션 버튼 */}
+      <View style={cStyles.actions}>
+        {onMove && (
+          <TouchableOpacity onPress={() => onMove(item)} style={cStyles.moveBtn}>
+            <Text style={cStyles.moveBtnText}>계좌이동</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity onPress={() => onDelete(item.id, item.stock_name)} style={cStyles.delBtn}>
+          <Text style={cStyles.delBtnText}>삭제</Text>
+        </TouchableOpacity>
       </View>
-      <View style={cStyles.line2}>
-        <Text style={cStyles.meta}>{item.shares}주 · 평단 ₩{item.avg_price.toLocaleString()}</Text>
-        <Text style={cStyles.curPrice}>
-          {item.currentPrice != null ? `₩${item.currentPrice.toLocaleString()}` : '—'}
-        </Text>
-      </View>
-      {aiItem?.reason ? <Text style={cStyles.aiReason} numberOfLines={1}>▸ {aiItem.reason}</Text> : null}
-    </TouchableOpacity>
+    </View>
   );
 }
 
 const cStyles = StyleSheet.create({
-  row: { paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
-  line1: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  name: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
-  pnlRate: { fontSize: 13, fontWeight: '700' },
-  line2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  meta: { fontSize: 12, color: '#6B7280' },
-  curPrice: { fontSize: 13, fontWeight: '600', color: '#C0C8E0' },
-  aiReason: { fontSize: 11, color: '#4A5568', marginTop: 4 },
+  card: { paddingHorizontal: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  name: { fontSize: 16.5, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3 },
+  code: { fontSize: 11, color: '#5B6478', marginTop: 3 },
+  pnlAmount: { fontSize: 16, fontWeight: '800' },
+  pnlRate: { fontSize: 12.5, fontWeight: '700', marginTop: 2 },
+  metaGrid: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#0E1226', borderRadius: 12,
+    paddingVertical: 10, paddingHorizontal: 4,
+    borderWidth: 1, borderColor: '#1A2040',
+  },
+  metaItem: { flex: 1, alignItems: 'center' },
+  metaDivider: { width: 1, alignSelf: 'stretch', backgroundColor: '#1A2040', marginVertical: 2 },
+  metaLabel: { fontSize: 10, color: '#5B6478', marginBottom: 4, fontWeight: '600' },
+  metaValue: { fontSize: 13, fontWeight: '700', color: '#D8DEF0' },
+  aiReason: { fontSize: 11.5, color: '#7C89A6', marginTop: 9 },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 11 },
   moveBtn: {
-    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 7,
+    paddingHorizontal: 11, paddingVertical: 5, borderRadius: 8,
     borderWidth: 1, borderColor: '#2E3A5C', backgroundColor: '#1A2138',
   },
-  moveBtnText: { fontSize: 11, color: '#8FA8D8', fontWeight: '600' },
+  moveBtnText: { fontSize: 11.5, color: '#8FA8D8', fontWeight: '600' },
+  delBtn: {
+    paddingHorizontal: 11, paddingVertical: 5, borderRadius: 8,
+    borderWidth: 1, borderColor: '#3A2230', backgroundColor: '#241620',
+  },
+  delBtnText: { fontSize: 11.5, color: '#CC7788', fontWeight: '600' },
 });
 
 // ── 계좌 탭바 ────────────────────────────────────────────────────────
