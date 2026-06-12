@@ -12,6 +12,21 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '15mb' }));
 
+// ── Rate limiting (IP당 1분 단위, Upstash Redis) ───────────────────────
+// 일반 사용엔 안 걸릴 만큼 넉넉. AI(Groq 비용)는 조금 더 빡빡, cron은 제외(CRON_SECRET로 보호).
+const { rateLimit } = require('./lib/rateLimit');
+app.use(async (req, res, next) => {
+  const path = req.path.replace(/^\/api/, '');
+  if (path.startsWith('/cron/') || path === '/macro/collect') return next(); // cron 제외
+  let rule;
+  if (path.startsWith('/ai/')) rule = { bucket: 'ai', limit: 30, windowSec: 60 };
+  else if (path.startsWith('/push/')) rule = { bucket: 'push', limit: 20, windowSec: 60 };
+  else rule = { bucket: 'def', limit: 150, windowSec: 60 };
+  const ok = await rateLimit(req, res, rule);
+  if (!ok) return; // 429 이미 응답됨
+  next();
+});
+
 const router = express.Router();
 
 router.all('/kis/price',       require('./api/kis/price'));
