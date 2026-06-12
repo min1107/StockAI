@@ -45,3 +45,6 @@ app-example
 
 .vercel
 .env*.local
+
+# OMC / AI tooling local state
+.omc/
