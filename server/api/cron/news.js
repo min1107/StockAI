@@ -39,7 +39,8 @@ async function fetchNaverNews(query) {
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Cron 보안(fail-closed): 실제 HTTP 요청(res 존재)일 때만 검사. CRON_SECRET 미설정 시에도 차단. 내부 호출(res=null)은 통과.
+  if (res && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

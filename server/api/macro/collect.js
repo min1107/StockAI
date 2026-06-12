@@ -36,8 +36,9 @@ async function fetchExchangeRate() {
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Vercel Cron 인증 (프로덕션 보안)
-  if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Vercel Cron 인증 (fail-closed): 실제 HTTP 요청(res 존재)일 때만 검사. CRON_SECRET 미설정 시에도 차단.
+  // macro/context가 내부에서 collect(req, null) 호출하므로 res=null은 통과시킴.
+  if (res && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

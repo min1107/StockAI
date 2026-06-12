@@ -84,7 +84,9 @@ async function fetchInvestor(code) {
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Cron 보안(fail-closed): 실제 HTTP 요청(res 존재)일 때만 검사. CRON_SECRET 미설정 시에도 무조건 차단.
+  // 내부 함수 호출(res=null)은 통과시켜 macro/context 등의 내부 트리거가 깨지지 않게 함.
+  if (res && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
