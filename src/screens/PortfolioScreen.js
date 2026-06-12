@@ -24,7 +24,7 @@ import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, del
 import { fetchStockDetail, searchStocks } from '../services/stockAPI';
 import { getMacroContext } from '../services/kisAPI';
 import { analyzePortfolio } from '../services/groqAPI';
-import { toSymbol, currencyOf, fmtMoney, toKRW, DEFAULT_FX } from '../utils/market';
+import { toSymbol, currencyOf, fmtMoney, toKRW, isKoreanCode, DEFAULT_FX } from '../utils/market';
 import { loadNotifSettings, checkPnlAlert, checkBigMovementAlert } from '../services/notificationService';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -888,6 +888,9 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
 
   // 직접입력 state
   const [market, setMarket] = useState('KR'); // 'KR' | 'US'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const [stockCode, setStockCode] = useState('');
   const [stockName, setStockName] = useState('');
   const [shares, setShares] = useState('');
@@ -912,12 +915,43 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
     if (visible) setTargetAccountId(defaultAccountId || null);
   }, [visible, defaultAccountId]);
 
+  // 종목 검색 (디바운스) — 직접입력 모드에서만
+  useEffect(() => {
+    if (mode !== 'manual') return;
+    const q = searchQuery.trim();
+    if (q.length < 1) { setSearchResults([]); setSearching(false); return; }
+    let active = true;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await searchStocks(q);
+        if (active) setSearchResults((r || []).slice(0, 8));
+      } catch {
+        if (active) setSearchResults([]);
+      } finally {
+        if (active) setSearching(false);
+      }
+    }, 350);
+    return () => { active = false; clearTimeout(t); };
+  }, [searchQuery, mode]);
+
+  // 검색 결과 선택 → 코드·종목명·시장 자동 채움
+  const pickSearchResult = (r) => {
+    const code = r.code || String(r.symbol || '').split('.')[0];
+    setStockCode(code);
+    setStockName(r.name || '');
+    setMarket(isKoreanCode(code) ? 'KR' : 'US');
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
   const reset = () => {
     setMode(null);
     setMarket('KR');
     setStockCode(''); setStockName(''); setShares(''); setAvgPrice('');
     setCsvItems([]); setCsvError(''); setSelected({});
     setPasteText(''); setPasteRows([]);
+    setSearchQuery(''); setSearchResults([]);
     setTargetAccountId(null);
   };
 
@@ -1172,6 +1206,29 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                 ) : null;
               })()}
 
+              {/* 종목 검색 (이름/티커 → 자동 채움) */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>종목 검색</Text>
+                <TextInput style={styles.modalInput}
+                  placeholder="이름·티커로 검색 (예: 삼성전자, AAPL)"
+                  placeholderTextColor="#4A5568"
+                  value={searchQuery} onChangeText={setSearchQuery}
+                  autoCapitalize="none" autoCorrect={false} />
+                {searching ? (
+                  <Text style={addStyles.searchHint}>검색 중...</Text>
+                ) : null}
+                {searchResults.length > 0 && (
+                  <View style={addStyles.searchResults}>
+                    {searchResults.map((r, i) => (
+                      <TouchableOpacity key={`${r.code}_${i}`} style={addStyles.searchRow} onPress={() => pickSearchResult(r)}>
+                        <Text style={addStyles.searchName} numberOfLines={1}>{r.name}</Text>
+                        <Text style={addStyles.searchMeta}>{r.code}{r.exchange ? ` · ${r.exchange}` : ''}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+
               {/* 시장 선택 (국내 / 미국) */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>시장</Text>
@@ -1414,6 +1471,14 @@ const addStyles = StyleSheet.create({
   marketBtnActive: { borderColor: '#00D9FF80', backgroundColor: '#00D9FF18' },
   marketBtnText: { fontSize: 14, color: '#8892A4', fontWeight: '700' },
   marketBtnTextActive: { color: '#00D9FF' },
+  searchHint: { fontSize: 12, color: '#6B7280', marginTop: 6 },
+  searchResults: {
+    marginTop: 8, borderRadius: 10, borderWidth: 1, borderColor: '#252A47',
+    backgroundColor: '#0A0E27', overflow: 'hidden',
+  },
+  searchRow: { paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
+  searchName: { fontSize: 14, color: '#FFFFFF', fontWeight: '600' },
+  searchMeta: { fontSize: 11, color: '#6B7280', marginTop: 2 },
   optionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: '#0A0E27', borderRadius: 14, padding: 16,

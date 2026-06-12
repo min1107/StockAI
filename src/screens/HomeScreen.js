@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import DraggableFlatList from 'react-native-draggable-flatlist';
 import { Swipeable } from 'react-native-gesture-handler';
 import { fetchStockData, searchStocks, validateStockByCode, getAIRecommendations } from '../services/stockAPI';
 import { getKISMarketIndex, warmupKISToken, getMacroContext, getSectorData } from '../services/kisAPI';
@@ -722,7 +721,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>⭐ 관심 종목</Text>
             {favorites.length > 0 && (
-              <Text style={styles.sectionHint}>길게 눌러 순서변경 · 스와이프 삭제</Text>
+              <Text style={styles.sectionHint}>← 스와이프하여 삭제</Text>
             )}
           </View>
 
@@ -739,27 +738,21 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           ) : (
-            <DraggableFlatList
-              data={favorites.map(fav => {
-                const stockData = stocks.find(s => s.symbol === fav.symbol);
-                return stockData || {
-                  ...fav,
-                  regularMarketPrice: 0,
-                  regularMarketChange: 0,
-                  regularMarketChangePercent: 0,
-                  regularMarketDayHigh: 0,
-                  regularMarketDayLow: 0,
-                  regularMarketVolume: 0,
-                  currency: 'KRW',
-                };
-              })}
-              renderItem={({ item, drag }) => renderStockCard(item, drag)}
-              keyExtractor={item => item.symbol}
-              onDragEnd={({ data }) => {
-                saveFavorites(data.map(d => ({ symbol: d.symbol, name: d.name })));
-              }}
-              scrollEnabled={false}
-            />
+            // 일반 목록으로 렌더 — 드래그 리스트(중첩 VirtualizedList)를 빼서 스크롤이 매끄러움
+            favorites.map(fav => {
+              const stockData = stocks.find(s => s.symbol === fav.symbol);
+              const item = stockData || {
+                ...fav,
+                regularMarketPrice: 0,
+                regularMarketChange: 0,
+                regularMarketChangePercent: 0,
+                regularMarketDayHigh: 0,
+                regularMarketDayLow: 0,
+                regularMarketVolume: 0,
+                currency: 'KRW',
+              };
+              return <View key={item.symbol}>{renderStockCard(item)}</View>;
+            })
           )}
         </View>
 
