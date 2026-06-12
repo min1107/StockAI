@@ -1,5 +1,12 @@
 const express = require('express');
 
+// Upstash 환경변수에 끼어든 개행/공백 제거.
+// (Vercel env 값 끝에 trailing newline이 있어 new Redis()가 'invalid URL'로 실패 →
+//  모든 redis 캐시·푸시구독·rate limit이 조용히 fail-open 되던 문제. 라우트/캐시 로드 전에 정리.)
+['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'].forEach((k) => {
+  if (process.env[k]) process.env[k] = process.env[k].trim();
+});
+
 const app = express();
 
 app.use((req, res, next) => {
