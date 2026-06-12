@@ -114,10 +114,19 @@ export async function enableWebPush() {
   return true;
 }
 
-// 테스트 푸시 요청 (전체 구독자에게 1건 — 본인 포함)
+// 테스트 푸시 — 본인 기기로만 발송
 export async function sendTestPush() {
-  const resp = await fetch(`${SERVER}/api/push/test`, { method: 'POST' });
+  if (!isWebPushSupported()) throw new Error('이 기기/브라우저는 웹 푸시를 지원하지 않습니다.');
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) throw new Error('먼저 "웹 푸시 알림 켜기"로 알림을 켜주세요.');
+
+  const resp = await fetch(`${SERVER}/api/push/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription: sub }),
+  });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(data.error || '테스트 발송 실패');
-  return data; // { sent, failed, total }
+  return data; // { sent, failed }
 }

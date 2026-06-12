@@ -42,4 +42,17 @@ async function sendToAll(payload) {
   return { sent, failed, total: subs.length };
 }
 
-module.exports = { sendToAll, ensureConfig };
+// 단일 구독자에게만 발송 (테스트 = 호출한 본인 기기로만)
+async function sendToOne(sub, payload) {
+  if (!ensureConfig()) return { sent: 0, failed: 0, skipped: true };
+  if (!sub || !sub.endpoint) return { sent: 0, failed: 0, error: 'no subscription' };
+  try {
+    await webpush.sendNotification(sub, JSON.stringify(payload));
+    return { sent: 1, failed: 0 };
+  } catch (e) {
+    if (e.statusCode === 404 || e.statusCode === 410) await removeSub(sub.endpoint);
+    return { sent: 0, failed: 1, error: e.message };
+  }
+}
+
+module.exports = { sendToAll, sendToOne, ensureConfig };
