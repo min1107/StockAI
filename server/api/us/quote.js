@@ -13,6 +13,7 @@ module.exports = async (req, res) => {
 
   const symbol = String(req.query.symbol || '').trim().toUpperCase();
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
+  if (!/^[A-Z.\-]{1,10}$/.test(symbol)) return res.status(400).json({ error: '잘못된 티커 형식' });
 
   try {
     const r = await axios.get(`${YF}/${symbol}`, {

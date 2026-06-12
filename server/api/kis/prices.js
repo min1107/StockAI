@@ -10,7 +10,10 @@ module.exports = async (req, res) => {
     const { codes } = req.query;
     if (!codes) return res.status(400).json({ error: '종목코드(codes) 필요 (쉼표 구분)' });
 
-    const codeList = codes.split(',').map(c => c.trim()).filter(Boolean);
+    const codeList = codes.split(',')
+      .map(c => c.trim())
+      .filter(c => /^[A-Za-z0-9.]{1,12}$/.test(c)) // 형식 검증
+      .slice(0, 50);                                // 한 번에 최대 50개 (비용/시간 보호)
     if (codeList.length === 0) return res.status(400).json({ error: '종목코드가 없습니다' });
 
     const results = {};

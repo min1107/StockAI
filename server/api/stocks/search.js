@@ -36,8 +36,9 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const { q } = req.query;
-    if (!q || q.trim().length === 0) return res.status(200).json([]);
+    let { q } = req.query;
+    if (!q || String(q).trim().length === 0) return res.status(200).json([]);
+    q = String(q).trim().slice(0, 50); // 길이 제한
 
     // 1단계: 로컬 DB (즉시 응답)
     const dbResults = stocksDB.search(q);

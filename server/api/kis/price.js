@@ -7,6 +7,9 @@ module.exports = async (req, res) => {
   try {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: '종목코드(code) 필요' });
+    if (!/^[A-Za-z0-9.]{1,12}$/.test(String(code).trim())) {
+      return res.status(400).json({ error: '잘못된 종목코드 형식' });
+    }
 
     const headers = await getAuthHeaders('FHKST01010100');
 

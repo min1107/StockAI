@@ -11,6 +11,9 @@ module.exports = async (req, res) => {
   if (!Array.isArray(holdings) || holdings.length === 0) {
     return res.status(400).json({ error: '보유종목이 없습니다' });
   }
+  if (holdings.length > 100) {
+    return res.status(400).json({ error: '보유종목이 너무 많습니다 (최대 100개)' });
+  }
 
   const totalCost  = holdings.reduce((s, h) => s + h.avgPrice * h.shares, 0);
   const totalEval  = holdings.reduce((s, h) => s + (h.currentPrice ?? h.avgPrice) * h.shares, 0);

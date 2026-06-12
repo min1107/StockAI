@@ -50,10 +50,11 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const { keyword } = req.query;
-    if (!keyword || keyword.trim().length === 0) {
+    let { keyword } = req.query;
+    if (!keyword || String(keyword).trim().length === 0) {
       return res.status(200).json([]);
     }
+    keyword = String(keyword).trim().slice(0, 50); // 길이 제한
 
     const headers = await getAuthHeaders('CTPF1604R');
     const isCodeSearch = /^\d+$/.test(keyword.trim());
