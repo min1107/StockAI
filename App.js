@@ -4,11 +4,29 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/context/AuthContext';
 import { setupNotifHandler } from './src/services/notificationService';
 import { injectPWAMeta, registerServiceWorker } from './src/services/webPush';
+
+// react-native-web의 Alert.alert는 no-op(아무것도 안 함) → 웹에서 브라우저 대화상자로 대체.
+// 이걸로 앱 전체의 성공/실패 배너 + 삭제 확인창(onPress 콜백)이 웹에서도 동작함.
+if (Platform.OS === 'web') {
+  Alert.alert = (title, message, buttons) => {
+    const text = [title, message].filter(Boolean).join('\n\n');
+    if (Array.isArray(buttons) && buttons.length > 1) {
+      const cancelBtn = buttons.find(b => b.style === 'cancel');
+      const actionBtns = buttons.filter(b => b.style !== 'cancel');
+      const ok = typeof window !== 'undefined' && window.confirm(text);
+      if (ok) { actionBtns[actionBtns.length - 1]?.onPress?.(); }
+      else { cancelBtn?.onPress?.(); }
+    } else {
+      if (typeof window !== 'undefined') window.alert(text);
+      buttons?.[0]?.onPress?.();
+    }
+  };
+}
 import HomeScreen from './src/screens/HomeScreen';
 import StockDetailScreen from './src/screens/StockDetailScreen';
 import PortfolioScreen from './src/screens/PortfolioScreen';
