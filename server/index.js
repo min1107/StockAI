@@ -9,8 +9,20 @@ const express = require('express');
 
 const app = express();
 
+// CORS: 우리 PWA 주소 + 로컬 개발만 허용. (Origin 없는 비브라우저 요청은 CORS 무관하게 통과)
+const ALLOWED_ORIGINS = [
+  'https://min1107.github.io',
+  'http://localhost:8081',
+  'http://localhost:19006',
+  'http://localhost:3000',
+  'http://localhost:19000',
+];
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
