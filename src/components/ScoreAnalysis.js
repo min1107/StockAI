@@ -383,6 +383,30 @@ function InterpretationCard({ interpretation }) {
   );
 }
 
+// ─── 이벤트 캘린더 (D-day) ───────────────────────────────────────────────────
+function CalendarCard({ calendar }) {
+  if (!calendar || !calendar.length) return null;
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>다가오는 일정 (추정)</Text>
+      {calendar.map((e, i) => {
+        const urgent = e.dday <= 14;
+        return (
+          <View key={i} style={[styles.calRow, i > 0 && styles.calBorder]}>
+            <View style={[styles.calDday, { backgroundColor: (urgent ? NEG : '#4FC3F7') + '20' }]}>
+              <Text style={[styles.calDdayText, { color: urgent ? NEG : '#4FC3F7' }]}>D-{e.dday}</Text>
+            </View>
+            <View style={styles.calBody}>
+              <Text style={styles.calEvent}>{e.event}</Text>
+              <Text style={styles.calNote}>{e.date}{e.note ? ` · ${e.note}` : ''}</Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 // ─── 전략 숫자 ───────────────────────────────────────────────────────────────
 function StrategyCard({ data }) {
   const items = [
@@ -438,6 +462,7 @@ export default function ScoreAnalysis({ conservative, aggressive, loading }) {
           <FactorsCard factors={engine.factors} />
           <GuardsCard guards={engine.guards} />
           <InterpretationCard interpretation={data.interpretation} />
+          <CalendarCard calendar={engine.calendar} />
           <StrategyCard data={data} />
         </>
       )}
@@ -577,6 +602,15 @@ const styles = StyleSheet.create({
   bbRow: { flexDirection: 'row', gap: 7, marginBottom: 5, alignItems: 'flex-start' },
   bbDot: { fontSize: 13, lineHeight: 18 },
   bbText: { flex: 1, fontSize: 13, color: '#9AA3B5', lineHeight: 18 },
+
+  // 캘린더
+  calRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 9 },
+  calBorder: { borderTopWidth: 1, borderTopColor: '#1E2340' },
+  calDday: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5, minWidth: 52, alignItems: 'center' },
+  calDdayText: { fontSize: 13, fontWeight: '800' },
+  calBody: { flex: 1 },
+  calEvent: { fontSize: 13, fontWeight: '600', color: '#C0C8E0', marginBottom: 2 },
+  calNote: { fontSize: 10, color: '#6B7280', lineHeight: 14 },
 
   // 팩터 막대
   factorRow: { marginBottom: 14 },

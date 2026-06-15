@@ -18,6 +18,7 @@ const { runScoreEngine, buildEngineInput, crossCheckBusinessValue } = require('.
 const { getMacroForAI, getNewsForAI, getSupplyForAI } = require('../macro/context');
 const { getUniverseDistribution } = require('../../lib/universeCache');
 const { rankStock } = require('../../lib/universe');
+const { buildCalendar } = require('../../lib/calendar');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -53,6 +54,12 @@ module.exports = async (req, res) => {
     const dist = await getUniverseDistribution();
     if (dist) input.universeRank = rankStock({ per: stockData.per, pbr: stockData.pbr, marketCap: stockData.marketCap }, dist);
   } catch (_) { /* 분포 없으면 랭킹 생략 */ }
+  // 이벤트 캘린더 (DART 결산월·배당으로 D-day 추정)
+  const dp = stockData.dartProfile;
+  input.calendar = buildCalendar({
+    settleMonth: dp?.settleMonth,
+    hasDividend: !!(dp?.dividend && (dp.dividend.payoutRatio || dp.dividend.yieldRate)),
+  });
   const engine = runScoreEngine(input, mode);
   const base = priceTargets(price, engine.recommendation, mode);
   // 목표가: 적정가가 신뢰가능하게 계산됐으면 그것을, 아니면 추천강도 기반 폴백
@@ -92,6 +99,9 @@ ${fv && Number.isFinite(fv.fairValue)
 ${engine.missingFactors.length ? `미연동 팩터: ${engine.missingFactors.join(', ')} (신뢰도에 정직하게 반영됨)` : ''}
 ${engine.universeRank && engine.universeRank.items.length
   ? `유니버스 상대 위치(전종목 ${engine.universeRank.universeSize}개 대비): ${engine.universeRank.items.map(i => i.label).join(' · ')}${engine.universeRank.valueSummary ? ` → ${engine.universeRank.valueSummary}` : ''}`
+  : ''}
+${engine.calendar && engine.calendar.length
+  ? `다가오는 일정(추정): ${engine.calendar.map(e => `${e.event} D-${e.dday}(${e.date})`).join(' · ')}`
   : ''}
 
 [팩터별 점수]
@@ -203,6 +213,7 @@ F. 약세 논리(bear)는 "이 전제가 깨지면 투자 논리가 무너지는
       crossCheck,                     // 정량×정성 교차검증 판정(가치함정 등)
       universeRank: engine.universeRank,  // 유니버스 백분위(밸류·규모 상대 위치)
       bullBear: interp?.bullBear || null, // 강세/약세 양면 논리
+      calendar: engine.calendar,          // 이벤트 캘린더 D-day (P6)
     },
     targetPrice,
     stopLoss,

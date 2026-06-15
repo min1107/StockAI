@@ -391,6 +391,7 @@ function runScoreEngine(input = {}, mode = 'conservative') {
     missingFactors: factors.filter(f => !f.available).map(f => f.name),
     valuation: input.fairValueResult || null,   // 적정가·안전마진 (프론트 노출용)
     universeRank: input.universeRank || null,   // 유니버스 백분위 (P5-2)
+    calendar: input.calendar || null,           // 이벤트 캘린더 D-day (P6)
   };
 }
 
