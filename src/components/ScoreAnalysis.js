@@ -108,7 +108,19 @@ function VerdictCard({ engine, interpretation }) {
           <Text style={styles.confMetaLabel}>데이터 충실도</Text>
           <Text style={styles.confMetaValue}>{engine.dataCompleteness}%</Text>
         </View>
+        {engine.trackRecord?.measured ? (
+          <>
+            <View style={styles.confMetaDivider} />
+            <View style={styles.confMetaItem}>
+              <Text style={styles.confMetaLabel}>과거 적중률</Text>
+              <Text style={styles.confMetaValue}>{Math.round(engine.trackRecord.trackRecord * 100)}%</Text>
+            </View>
+          </>
+        ) : null}
       </View>
+      {engine.trackRecord?.label ? (
+        <Text style={styles.trackNote}>📈 {engine.trackRecord.label}</Text>
+      ) : null}
     </View>
   );
 }
@@ -589,6 +601,7 @@ const styles = StyleSheet.create({
   confMetaLabel: { fontSize: 10, color: '#6B7280', marginBottom: 3 },
   confMetaValue: { fontSize: 15, fontWeight: '700', color: '#C0C8E0' },
   confMetaDivider: { width: 1, height: 28, backgroundColor: '#252A47' },
+  trackNote: { fontSize: 10, color: '#6B7280', marginTop: 10, lineHeight: 14, textAlign: 'center' },
 
   // 적정가 카드
   fvTopRow: {

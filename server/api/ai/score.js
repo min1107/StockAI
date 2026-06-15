@@ -20,6 +20,8 @@ const { getUniverseDistribution } = require('../../lib/universeCache');
 const { rankStock } = require('../../lib/universe');
 const { buildCalendar } = require('../../lib/calendar');
 const { computeRisk } = require('../../lib/risk');
+const { getBacktest } = require('../../lib/backtestCache');
+const { getTrackRecord } = require('../../lib/backtest');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -49,12 +51,19 @@ module.exports = async (req, res) => {
   const stockData = req.body || {};
   const price = stockData.price || stockData.currentPrice || 0;
 
-  // 1) 점수 엔진 — 객관적 계산 (+ 유니버스 백분위 랭킹 주입)
+  // 1) 점수 엔진 — 객관적 계산 (+ 유니버스 랭킹 + 백테스트 trackRecord 주입)
   const input = buildEngineInput(stockData);
   try {
     const dist = await getUniverseDistribution();
     if (dist) input.universeRank = rankStock({ per: stockData.per, pbr: stockData.pbr, marketCap: stockData.marketCap }, dist);
   } catch (_) { /* 분포 없으면 랭킹 생략 */ }
+  // 백테스트 실측 trackRecord (현재 모멘텀 구간의 과거 방향 적중률) → 신뢰도 공식에 투입
+  let trackRecordInfo = { trackRecord: 0.5, measured: false, bucket: null, samples: 0 };
+  try {
+    const bt = await getBacktest();
+    if (bt) trackRecordInfo = getTrackRecord(bt, stockData.priceCloses);
+  } catch (_) { /* 백테스트 없으면 0.5 중립 */ }
+  input.trackRecord = trackRecordInfo.trackRecord;
   // 이벤트 캘린더 (DART 결산월·배당으로 D-day 추정)
   const dp = stockData.dartProfile;
   input.calendar = buildCalendar({
@@ -101,7 +110,7 @@ module.exports = async (req, res) => {
 관점: ${mode === 'aggressive' ? '공격(모멘텀)' : '보수(가치)'}
 종합 추천: ${engine.recommendation}
 종합 점수: ${engine.score} (-100~+100)
-신뢰도: ${engine.confidence}% (팩터 일치도 ${engine.agreement}%, 데이터 충실도 ${engine.dataCompleteness}%)
+신뢰도: ${engine.confidence}% (팩터 일치도 ${engine.agreement}%, 데이터 충실도 ${engine.dataCompleteness}%${trackRecordInfo.measured ? `, 모멘텀 과거적중률 ${Math.round(trackRecordInfo.trackRecord * 100)}%` : ', 적중률 미측정'})
 ${fv && Number.isFinite(fv.fairValue)
   ? `적정가(코드 계산): ${fv.fairValue.toLocaleString()}원 / 안전마진: ${fv.marginOfSafety >= 0 ? '+' : ''}${fv.marginOfSafety}% (산출방식: ${fv.methods.map(m => m.name).join('·')}, 신뢰도 ${fv.confidence})`
   : `적정가: ${fv?.note || '추정 불가'}`}
@@ -232,6 +241,12 @@ F. 약세 논리(bear)는 "이 전제가 깨지면 투자 논리가 무너지는
       bullBear: interp?.bullBear || null, // 강세/약세 양면 논리
       calendar: engine.calendar,          // 이벤트 캘린더 D-day (P6)
       risk,                               // 변동성·MDD·하방·권장비중 (P7)
+      trackRecord: {                      // 백테스트 실측 적중률 (P8)
+        ...trackRecordInfo,
+        label: trackRecordInfo.measured
+          ? `모멘텀 '${trackRecordInfo.bucket}' 구간 과거 방향 적중률 ${Math.round(trackRecordInfo.trackRecord * 100)}% (표본 ${trackRecordInfo.samples})`
+          : '백테스트 표본 부족 — 적중률 중립(50%) 적용',
+      },
     },
     targetPrice,
     stopLoss,

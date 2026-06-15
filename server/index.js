@@ -80,6 +80,7 @@ router.all('/macro/collect',   require('./api/macro/collect'));
 router.all('/macro/context',   require('./api/macro/context'));
 router.all('/cron/news',       require('./api/cron/news'));
 router.all('/cron/supply',     require('./api/cron/supply'));
+router.all('/cron/backtest',   require('./api/cron/backtest'));
 router.all('/cron/screen',     require('./api/cron/screen'));
 router.all('/debug/cache',     require('./api/debug/cache'));
 router.all('/us/quote',        require('./api/us/quote'));

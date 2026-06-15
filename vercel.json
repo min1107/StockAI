@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/screen",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/backtest",
+      "schedule": "0 22 * * 0"
     }
   ]
 }
