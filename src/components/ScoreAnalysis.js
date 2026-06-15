@@ -187,8 +187,8 @@ const CROSS_COLOR = {
 };
 const LEVEL_COLOR = { '강': POS, '중': NEU, '약': NEG, '판단보류': MUTED };
 
-function BusinessValueCard({ businessValue, crossCheck }) {
-  if (!businessValue && !crossCheck) return null;
+function BusinessValueCard({ businessValue, crossCheck, insider }) {
+  if (!businessValue && !crossCheck && !insider) return null;
   const cc = crossCheck;
   const bv = businessValue;
   const ccColor = cc ? (CROSS_COLOR[cc.verdict] || MUTED) : MUTED;
@@ -233,6 +233,19 @@ function BusinessValueCard({ businessValue, crossCheck }) {
           {r.ev ? <Text style={styles.bvEvidence}>근거: {r.ev}</Text> : null}
         </View>
       ))}
+
+      {/* 내부자(임원·주요주주) 거래 — 정보우위 */}
+      {insider ? (
+        <View style={styles.insiderRow}>
+          <Text style={styles.insiderLabel}>🕵️ 내부자 1년</Text>
+          <View style={[styles.insiderBadge, { backgroundColor: (insider.signal.includes('매수') ? POS : insider.signal.includes('매도') ? NEG : MUTED) + '20' }]}>
+            <Text style={[styles.insiderBadgeText, { color: insider.signal.includes('매수') ? POS : insider.signal.includes('매도') ? NEG : MUTED }]}>
+              {insider.signal}
+            </Text>
+          </View>
+          <Text style={styles.insiderSub}>매수 {insider.buyers} · 매도 {insider.sellers}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -505,7 +518,7 @@ export default function ScoreAnalysis({ conservative, aggressive, loading }) {
           <VerdictCard engine={engine} interpretation={data.interpretation} />
           <FairValueCard valuation={engine.valuation} />
           <UniverseCard universeRank={engine.universeRank} />
-          <BusinessValueCard businessValue={engine.businessValue} crossCheck={engine.crossCheck} />
+          <BusinessValueCard businessValue={engine.businessValue} crossCheck={engine.crossCheck} insider={engine.insider} />
           <BullBearCard bullBear={engine.bullBear} />
           <FactorsCard factors={engine.factors} />
           <GuardsCard guards={engine.guards} />
@@ -635,6 +648,11 @@ const styles = StyleSheet.create({
   bvLevelText: { fontSize: 11, fontWeight: '700' },
   bvRowSub: { fontSize: 11, color: '#8892A4', flex: 1 },
   bvEvidence: { fontSize: 11, color: '#6B7280', lineHeight: 16, fontStyle: 'italic' },
+  insiderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#1E2340' },
+  insiderLabel: { fontSize: 12, fontWeight: '700', color: '#C0C8E0' },
+  insiderBadge: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  insiderBadgeText: { fontSize: 11, fontWeight: '700' },
+  insiderSub: { fontSize: 11, color: '#8892A4' },
 
   // 유니버스 카드
   uvSize: { fontSize: 10, color: '#6B7280' },

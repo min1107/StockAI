@@ -145,6 +145,9 @@ ${(() => {
 ${stockData.dartBusiness?.businessSummary
   ? `DART 사업보고서 발췌(${stockData.dartBusiness.reportName || ''}) — 사업의 개요:\n"${stockData.dartBusiness.businessSummary}"`
   : '사업보고서 발췌: (미연동)'}
+${stockData.dartInsider?.available
+  ? `내부자(임원·주요주주) 최근 1년 거래: ${stockData.dartInsider.signal} (매수 ${stockData.dartInsider.buyers}건 / 매도 ${stockData.dartInsider.sellers}건) — 경영진의 자기 회사 주식 매매 동향`
+  : ''}
 종목 관련 뉴스 헤드라인:
 ${Array.isArray(stockData.newsHeadlines) && stockData.newsHeadlines.length
   ? stockData.newsHeadlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
@@ -247,6 +250,12 @@ F. 약세 논리(bear)는 "이 전제가 깨지면 투자 논리가 무너지는
           ? `모멘텀 '${trackRecordInfo.bucket}' 구간 과거 방향 적중률 ${Math.round(trackRecordInfo.trackRecord * 100)}% (표본 ${trackRecordInfo.samples})`
           : '백테스트 표본 부족 — 적중률 중립(50%) 적용',
       },
+      insider: stockData.dartInsider?.available ? {  // 내부자 거래 (P9)
+        signal: stockData.dartInsider.signal,
+        buyers: stockData.dartInsider.buyers,
+        sellers: stockData.dartInsider.sellers,
+        netChange: stockData.dartInsider.netChange,
+      } : null,
     },
     targetPrice,
     stopLoss,

@@ -90,6 +90,22 @@ export const getDartBusiness = async (stockCode) => {
   }
 };
 
+// 2-4. DART 내부자(임원·주요주주) 거래 — 정보우위 신호. 국내주식만. 초대형주는 미제공일 수 있음.
+export const getDartInsider = async (stockCode) => {
+  try {
+    const code = String(stockCode).split('.')[0];
+    if (!/^[0-9]{6}$/.test(code)) return null;
+    const response = await axios.get(`${SERVER}/api/dart/insider`, {
+      params: { code },
+      timeout: 16000,
+    });
+    return response.data?.available ? response.data : null;
+  } catch (error) {
+    console.warn('⚠️ 내부자 거래 미반영:', error.message);
+    return null;
+  }
+};
+
 // 3. 투자자별 매매동향 (기관/외국인)
 export const getKISInvestorTrend = async (stockCode) => {
   try {
