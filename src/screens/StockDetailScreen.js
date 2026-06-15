@@ -497,12 +497,13 @@ export default function StockDetailScreen({ route, navigation }) {
         }
       }
 
-      // 🆕 재무비율 + DART 프로필 — 점수엔진 품질/성장 팩터 + 정성평가 근거. 국내주식만, 실패해도 null.
-      let financials = null, dartProfile = null;
+      // 🆕 재무비율 + DART 프로필/사업보고서 — 점수엔진 품질/성장 팩터 + 정성평가 근거. 국내주식만, 실패해도 null.
+      let financials = null, dartProfile = null, dartBusiness = null;
       try {
-        [financials, dartProfile] = await Promise.all([
+        [financials, dartProfile, dartBusiness] = await Promise.all([
           KISAPI.getKISFinancials(symbol),
           KISAPI.getDartProfile(symbol),
+          KISAPI.getDartBusiness(symbol),
         ]);
       } catch (e) {
         console.warn('재무/DART 조회 생략:', e.message);
@@ -535,6 +536,7 @@ export default function StockDetailScreen({ route, navigation }) {
         newsCount: currentNews.length,
         newsHeadlines: currentNews.slice(0, 6).map(n => n.title).filter(Boolean), // 정성평가 근거 인용용
         dartProfile, // 🆕 DART 정형 사실(설립·업력·시장·배당) — 정성평가 근거
+        dartBusiness, // 🆕 DART 사업보고서 '사업의 개요' 발췌 — 정성평가 최상위 근거
         institutional: updatedInstitutionalData,
         // 🆕 수급 추세 분석 데이터
         supplyAnalysis: {

@@ -102,6 +102,9 @@ ${(() => {
     : '배당 내역 없음/미상';
   return `DART 공시 사실: ${dp.corpName || ''} · 설립 ${dp.established || '?'}(업력 ${dp.ageYears ?? '?'}년) · ${dp.market || ''} · 대표 ${dp.ceo || '?'} · ${div}`;
 })()}
+${stockData.dartBusiness?.businessSummary
+  ? `DART 사업보고서 발췌(${stockData.dartBusiness.reportName || ''}) — 사업의 개요:\n"${stockData.dartBusiness.businessSummary}"`
+  : '사업보고서 발췌: (미연동)'}
 종목 관련 뉴스 헤드라인:
 ${Array.isArray(stockData.newsHeadlines) && stockData.newsHeadlines.length
   ? stockData.newsHeadlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
@@ -117,8 +120,8 @@ ${Array.isArray(stockData.newsHeadlines) && stockData.newsHeadlines.length
 6. JSON 외 텍스트 출력 금지.
 
 [사업가치(정성) 평가 — 근거 기반 판단]
-A. "정성 평가 근거 자료"의 뉴스 헤드라인·DART 공시 사실(설립/업력/시장/배당)·업종, 그리고 그 기업에 일반적으로 알려진 사실은 모두 정당한 1차 근거다. 이를 적극 활용해 해자·산업·지속성을 강/중/약으로 판단하라.
-B. 각 판단의 evidence에는 근거로 삼은 헤드라인 문구·DART 사실·업종 특성을 구체적으로 인용한다. (예: "업력 59년·배당성향 27.7%로 안정적", "헤드라인 2번 미국 전기차 판매 호조")
+A. "정성 평가 근거 자료"의 DART 사업보고서 발췌(사업의 개요)·뉴스 헤드라인·DART 공시 사실(설립/업력/시장/배당)·업종, 그리고 그 기업에 일반적으로 알려진 사실은 모두 정당한 1차 근거다. 특히 사업보고서 발췌가 있으면 사업모델·해자 판단의 핵심 근거로 우선 활용하라.
+B. 각 판단의 evidence에는 근거로 삼은 사업보고서 문구·헤드라인·DART 사실·업종 특성을 구체적으로 인용한다. (예: "사업보고서상 DRAM·NAND 중심 메모리 반도체 기업", "업력 59년·배당성향 27.7%로 안정적")
 C. "판단보류"는 해당 항목과 관련된 정보가 제공 자료에 전혀 없을 때만 쓴다. 정보가 일부라도 있으면 보수적으로라도 강/중/약을 판단하라.
 D. 단, 제공되지 않은 구체적 수치(시장점유율 X% 등)를 임의로 지어내지 말 것. 모르면 정성적 표현으로만 서술한다.`;
 

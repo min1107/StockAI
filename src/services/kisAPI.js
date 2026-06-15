@@ -72,6 +72,24 @@ export const getDartProfile = async (stockCode) => {
   }
 };
 
+// 2-3. DART 사업보고서 '사업의 개요' 발췌 — 정성평가 최상위 근거. 국내주식만.
+// 첫 호출은 문서 다운로드로 느려(서버가 백그라운드 캐시) 짧은 타임아웃·논블로킹으로 둔다.
+export const getDartBusiness = async (stockCode) => {
+  try {
+    const code = String(stockCode).split('.')[0];
+    if (!/^[0-9]{6}$/.test(code)) return null;
+    const response = await axios.get(`${SERVER}/api/dart/business`, {
+      params: { code },
+      timeout: 13000, // 미캐시 시 타임아웃 → 이번엔 없이 진행, 서버가 캐시→다음번 포함
+    });
+    console.log(`✅ [${code}] 사업보고서:`, response.data?.reportName);
+    return response.data;
+  } catch (error) {
+    console.warn('⚠️ 사업보고서 발췌 미반영(미캐시/지연):', error.message);
+    return null;
+  }
+};
+
 // 3. 투자자별 매매동향 (기관/외국인)
 export const getKISInvestorTrend = async (stockCode) => {
   try {

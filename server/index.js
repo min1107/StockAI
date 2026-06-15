@@ -64,6 +64,7 @@ router.all('/kis/index',       require('./api/kis/index'));
 router.all('/kis/sectors',     require('./api/kis/sectors'));
 router.all('/kis/financials',  require('./api/kis/financials'));
 router.all('/dart/profile',    require('./api/dart/profile'));
+router.all('/dart/business',   require('./api/dart/business'));
 router.all('/ai/conservative', require('./api/ai/conservative'));
 router.all('/ai/aggressive',   require('./api/ai/aggressive'));
 router.all('/ai/analyze',      require('./api/ai/analyze'));
