@@ -407,6 +407,42 @@ function CalendarCard({ calendar }) {
   );
 }
 
+// ─── 리스크·포지션 카드 ──────────────────────────────────────────────────────
+const RISK_COLOR = { '낮음': POS, '보통': NEU, '높음': NEG, '매우 높음': NEG };
+
+function RiskCard({ risk }) {
+  if (!risk) return null;
+  const gColor = RISK_COLOR[risk.riskGrade] || NEU;
+  const cells = [
+    { label: '연 변동성', value: `${risk.volatility}%`, color: gColor },
+    { label: '최대낙폭', value: `${risk.mdd}%`, color: NEG },
+    { label: `${risk.holdingMonths}M 하방(95%)`, value: `-${risk.downside}%`, color: NEG },
+    { label: '권장 최대비중', value: `${risk.positionSizePct}%`, color: '#4FC3F7' },
+  ];
+  if (risk.beta !== null && risk.beta !== undefined) {
+    cells.splice(3, 0, { label: '베타', value: `${risk.beta}`, color: '#FFFFFF' });
+  }
+  return (
+    <View style={styles.card}>
+      <View style={styles.aiTitleRow}>
+        <Text style={styles.cardTitle}>리스크 · 포지션</Text>
+        <View style={[styles.riskGradeBadge, { backgroundColor: gColor + '20' }]}>
+          <Text style={[styles.riskGradeText, { color: gColor }]}>리스크 {risk.riskGrade}</Text>
+        </View>
+      </View>
+      <View style={styles.riskGrid}>
+        {cells.map((c) => (
+          <View key={c.label} style={styles.riskCell}>
+            <Text style={styles.riskCellLabel}>{c.label}</Text>
+            <Text style={[styles.riskCellValue, { color: c.color }]}>{c.value}</Text>
+          </View>
+        ))}
+      </View>
+      {risk.note ? <Text style={styles.riskNote}>{risk.note}</Text> : null}
+    </View>
+  );
+}
+
 // ─── 전략 숫자 ───────────────────────────────────────────────────────────────
 function StrategyCard({ data }) {
   const items = [
@@ -463,6 +499,7 @@ export default function ScoreAnalysis({ conservative, aggressive, loading }) {
           <GuardsCard guards={engine.guards} />
           <InterpretationCard interpretation={data.interpretation} />
           <CalendarCard calendar={engine.calendar} />
+          <RiskCard risk={engine.risk} />
           <StrategyCard data={data} />
         </>
       )}
@@ -602,6 +639,18 @@ const styles = StyleSheet.create({
   bbRow: { flexDirection: 'row', gap: 7, marginBottom: 5, alignItems: 'flex-start' },
   bbDot: { fontSize: 13, lineHeight: 18 },
   bbText: { flex: 1, fontSize: 13, color: '#9AA3B5', lineHeight: 18 },
+
+  // 리스크
+  riskGradeBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 14 },
+  riskGradeText: { fontSize: 10, fontWeight: '700' },
+  riskGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  riskCell: {
+    flexGrow: 1, minWidth: '21%', backgroundColor: '#0D1128', borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: '#1E2340', alignItems: 'center',
+  },
+  riskCellLabel: { fontSize: 9, color: '#6B7280', marginBottom: 4, textAlign: 'center' },
+  riskCellValue: { fontSize: 15, fontWeight: '700' },
+  riskNote: { fontSize: 10, color: '#6B7280', marginTop: 10, lineHeight: 14 },
 
   // 캘린더
   calRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 9 },

@@ -19,6 +19,7 @@ const { getMacroForAI, getNewsForAI, getSupplyForAI } = require('../macro/contex
 const { getUniverseDistribution } = require('../../lib/universeCache');
 const { rankStock } = require('../../lib/universe');
 const { buildCalendar } = require('../../lib/calendar');
+const { computeRisk } = require('../../lib/risk');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -61,6 +62,14 @@ module.exports = async (req, res) => {
     hasDividend: !!(dp?.dividend && (dp.dividend.payoutRatio || dp.dividend.yieldRate)),
   });
   const engine = runScoreEngine(input, mode);
+
+  // 리스크·포지션 사이징 (종가 시계열 기반). valueTrap은 후단에서 반영.
+  const risk = computeRisk({
+    closes: stockData.priceCloses,
+    confidence: engine.confidence,
+    valueTrap: false,
+    holdingMonths: mode === 'aggressive' ? 2 : 6,
+  });
   const base = priceTargets(price, engine.recommendation, mode);
   // 목표가: 적정가가 신뢰가능하게 계산됐으면 그것을, 아니면 추천강도 기반 폴백
   const fv = engine.valuation;
@@ -103,6 +112,9 @@ ${engine.universeRank && engine.universeRank.items.length
 ${engine.calendar && engine.calendar.length
   ? `다가오는 일정(추정): ${engine.calendar.map(e => `${e.event} D-${e.dday}(${e.date})`).join(' · ')}`
   : ''}
+${risk
+  ? `리스크(코드 계산): 변동성 연 ${risk.volatility}%(${risk.riskGrade}) · 최대낙폭 ${risk.mdd}% · 보유기간 95% 하방 ${risk.downside}% · 권장 최대비중 ${risk.positionSizePct}%`
+  : '리스크: 가격 데이터 부족으로 미산출'}
 
 [팩터별 점수]
 ${factorLines}
@@ -194,6 +206,11 @@ F. 약세 논리(bear)는 "이 전제가 깨지면 투자 논리가 무너지는
   const crossCheck = crossCheckBusinessValue(qualityScore, businessValue?.overall);
   // 정성은 결론을 뒤집지 못하고 신뢰도만 보정 (가치함정 등)
   const finalConfidence = Math.max(25, engine.confidence - crossCheck.confidencePenalty);
+  // 가치함정이면 권장 비중 추가 축소
+  if (risk && crossCheck.valueTrap) {
+    risk.positionSizePct = Math.max(1, Math.round(risk.positionSizePct * 0.5));
+    risk.note += ' · 가치함정 경고로 비중 추가 축소';
+  }
 
   // 5) 엔진 숫자 + AI 해석 결합 (숫자는 항상 엔진 것)
   res.status(200).json({
@@ -214,9 +231,11 @@ F. 약세 논리(bear)는 "이 전제가 깨지면 투자 논리가 무너지는
       universeRank: engine.universeRank,  // 유니버스 백분위(밸류·규모 상대 위치)
       bullBear: interp?.bullBear || null, // 강세/약세 양면 논리
       calendar: engine.calendar,          // 이벤트 캘린더 D-day (P6)
+      risk,                               // 변동성·MDD·하방·권장비중 (P7)
     },
     targetPrice,
     stopLoss,
+    positionSizePct: risk ? risk.positionSizePct : null,
     holdingPeriod: mode === 'aggressive' ? '1~3개월' : '6개월~1년',
     interpretation: interp || {
       headline: `${engine.recommendation} · 신뢰도 ${engine.confidence}%`,

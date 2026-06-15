@@ -537,6 +537,7 @@ export default function StockDetailScreen({ route, navigation }) {
         newsHeadlines: currentNews.slice(0, 6).map(n => n.title).filter(Boolean), // 정성평가 근거 인용용
         dartProfile, // 🆕 DART 정형 사실(설립·업력·시장·배당) — 정성평가 근거
         dartBusiness, // 🆕 DART 사업보고서 '사업의 개요' 발췌 — 정성평가 최상위 근거
+        priceCloses: rsiSource.map(c => c.close).filter(Number.isFinite), // 🆕 종가 시계열 — 리스크(변동성·MDD) 계산용
         institutional: updatedInstitutionalData,
         // 🆕 수급 추세 분석 데이터
         supplyAnalysis: {
