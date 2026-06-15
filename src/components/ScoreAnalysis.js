@@ -225,6 +225,64 @@ function BusinessValueCard({ businessValue, crossCheck }) {
   );
 }
 
+// ─── 유니버스 백분위 카드 ────────────────────────────────────────────────────
+function UniverseCard({ universeRank }) {
+  if (!universeRank || !universeRank.items?.length) return null;
+  return (
+    <View style={styles.card}>
+      <View style={styles.aiTitleRow}>
+        <Text style={styles.cardTitle}>유니버스 상대 위치</Text>
+        {universeRank.universeSize ? (
+          <Text style={styles.uvSize}>전종목 {universeRank.universeSize.toLocaleString()}개 대비</Text>
+        ) : null}
+      </View>
+      {universeRank.valueSummary ? <Text style={styles.uvSummary}>{universeRank.valueSummary}</Text> : null}
+      <View style={styles.uvChips}>
+        {universeRank.items.map((it) => (
+          <View key={it.metric} style={styles.uvChip}>
+            <Text style={styles.uvChipLabel}>{it.label}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─── Bull / Bear 양면 카드 ───────────────────────────────────────────────────
+function BullBearCard({ bullBear }) {
+  if (!bullBear) return null;
+  const bull = (bullBear.bull || []).filter(Boolean);
+  const bear = (bullBear.bear || []).filter(Boolean);
+  if (!bull.length && !bear.length) return null;
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>양면 — 강세 vs 약세</Text>
+      {bull.length ? (
+        <View style={styles.bbBlock}>
+          <Text style={[styles.bbHead, { color: POS }]}>▲ 강세 논리</Text>
+          {bull.map((t, i) => (
+            <View key={`bull${i}`} style={styles.bbRow}>
+              <Text style={[styles.bbDot, { color: POS }]}>•</Text>
+              <Text style={styles.bbText}>{t}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {bear.length ? (
+        <View style={styles.bbBlock}>
+          <Text style={[styles.bbHead, { color: NEG }]}>▼ 약세 논리 (이게 깨지면 전제 붕괴)</Text>
+          {bear.map((t, i) => (
+            <View key={`bear${i}`} style={styles.bbRow}>
+              <Text style={[styles.bbDot, { color: NEG }]}>•</Text>
+              <Text style={styles.bbText}>{t}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // ─── 팩터 다이버징 막대 ──────────────────────────────────────────────────────
 function FactorBar({ factor }) {
   const { name, key, score, available, label, detail } = factor;
@@ -374,7 +432,9 @@ export default function ScoreAnalysis({ conservative, aggressive, loading }) {
         <>
           <VerdictCard engine={engine} interpretation={data.interpretation} />
           <FairValueCard valuation={engine.valuation} />
+          <UniverseCard universeRank={engine.universeRank} />
           <BusinessValueCard businessValue={engine.businessValue} crossCheck={engine.crossCheck} />
+          <BullBearCard bullBear={engine.bullBear} />
           <FactorsCard factors={engine.factors} />
           <GuardsCard guards={engine.guards} />
           <InterpretationCard interpretation={data.interpretation} />
@@ -500,6 +560,23 @@ const styles = StyleSheet.create({
   bvLevelText: { fontSize: 11, fontWeight: '700' },
   bvRowSub: { fontSize: 11, color: '#8892A4', flex: 1 },
   bvEvidence: { fontSize: 11, color: '#6B7280', lineHeight: 16, fontStyle: 'italic' },
+
+  // 유니버스 카드
+  uvSize: { fontSize: 10, color: '#6B7280' },
+  uvSummary: { fontSize: 13, color: '#C0C8E0', marginBottom: 10, lineHeight: 19 },
+  uvChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  uvChip: {
+    backgroundColor: '#0D1128', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    borderWidth: 1, borderColor: '#1E2340',
+  },
+  uvChipLabel: { fontSize: 11, color: '#C0C8E0', fontWeight: '600' },
+
+  // Bull/Bear
+  bbBlock: { marginBottom: 12 },
+  bbHead: { fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  bbRow: { flexDirection: 'row', gap: 7, marginBottom: 5, alignItems: 'flex-start' },
+  bbDot: { fontSize: 13, lineHeight: 18 },
+  bbText: { flex: 1, fontSize: 13, color: '#9AA3B5', lineHeight: 18 },
 
   // 팩터 막대
   factorRow: { marginBottom: 14 },

@@ -15,6 +15,7 @@
  */
 
 const { computeFairValue } = require('./valuation');
+const { computeConfidence } = require('./confidence');
 
 // ── 보수 vs 공격: 같은 데이터, 다른 가중치 (AI_ENGINE.md §3) ──────────
 const WEIGHTS = {
@@ -360,23 +361,13 @@ function runScoreEngine(input = {}, mode = 'conservative') {
   const guardPenalty = guards.filter(g => g.triggered).reduce((a, g) => a + (g.penalty || 0), 0);
   normScore = clamp(normScore + guardPenalty * 8, -100, 100); // 가드 1건당 약 8점
 
-  // ── 신뢰도 = 일치도 + 데이터 충실도 (AI_ENGINE.md §5) ──
+  // ── 신뢰도 정식 산출 (AI_ENGINE.md §6): 커버리지·일치도·과거적중률 ──
   const avail = factors.filter(f => f.available);
-  const dataCompleteness = avail.length / factors.length; // 0~1
-  // 일치도: 가용 팩터들이 같은 방향(부호)을 얼마나 가리키나
-  let agreement = 0.5;
-  if (avail.length > 0) {
-    const signs = avail.map(f => Math.sign(f.score)).filter(s => s !== 0);
-    if (signs.length > 0) {
-      const pos = signs.filter(s => s > 0).length;
-      const neg = signs.filter(s => s < 0).length;
-      agreement = Math.max(pos, neg) / signs.length; // 0.5(반반) ~ 1(완전일치)
-    }
-  }
-  // 신뢰도 = 일치도(주) × 데이터충실도(보정), 가드 triggered면 추가 하향
-  let confidence = (agreement * 0.7 + dataCompleteness * 0.3) * 100;
-  if (guards.some(g => g.triggered)) confidence -= 12;
-  confidence = Math.round(clamp(confidence, 25, 95));
+  const conf = computeConfidence(factors, {
+    trackRecord: isNum(input.trackRecord) ? input.trackRecord : 0.5, // P8 백테스트 전 중립
+    confidencePenalty: guards.some(g => g.triggered) ? 12 : 0,
+  });
+  const confidence = conf.confidence;
 
   const recommendation = toRecommendation(normScore, !!input.isHolding);
 
@@ -390,14 +381,16 @@ function runScoreEngine(input = {}, mode = 'conservative') {
     mode,
     recommendation,
     score: Math.round(normScore),        // -100 ~ +100
-    confidence,                          // 25 ~ 95 (진짜 측정값)
+    confidence,                          // 25 ~ 95 (정식 산출)
+    confidenceBasis: conf.confidenceBasis,  // 신뢰도 근거 분해 (커버리지/일치도/적중률)
     factors: factors.map(f => ({ ...f, weight: wmap[f.key] })),
     guards,
-    dataCompleteness: Math.round(dataCompleteness * 100),
-    agreement: Math.round(agreement * 100),
+    dataCompleteness: conf.coverage,
+    agreement: conf.agreement,
     evidence,
     missingFactors: factors.filter(f => !f.available).map(f => f.name),
     valuation: input.fairValueResult || null,   // 적정가·안전마진 (프론트 노출용)
+    universeRank: input.universeRank || null,   // 유니버스 백분위 (P5-2)
   };
 }
 

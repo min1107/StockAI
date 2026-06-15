@@ -9,6 +9,7 @@
 const axios = require('axios');
 const iconv = require('iconv-lite');
 const { setScreenCandidates } = require('../../lib/screenCache');
+const { setUniverseDistribution } = require('../../lib/universeCache');
 
 const NAVER_SISE = 'https://finance.naver.com/sise/sise_market_sum.nhn';
 const HEADERS = {
@@ -126,6 +127,12 @@ module.exports = async (req, res) => {
 
     const allStocks = await fetchAllStocks();
     console.log(`✅ 전체 수집: ${allStocks.length}개 종목`);
+
+    // 🆕 P5: 전종목 PER·PBR·시총 분포를 유니버스 랭킹용으로 캐시 (기존엔 버려지던 데이터)
+    try {
+      const dist = await setUniverseDistribution(allStocks);
+      console.log(`📊 유니버스 분포 캐시: PER/PBR/시총 (표본 ${dist.count})`);
+    } catch (e) { console.warn('유니버스 분포 캐시 실패:', e.message); }
 
     // 저평가 필터
     // PBR: 0 초과 ~ 2.0 이하 (우선선호 기준)

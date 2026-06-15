@@ -16,6 +16,8 @@
 const Groq = require('groq-sdk');
 const { runScoreEngine, buildEngineInput, crossCheckBusinessValue } = require('../../lib/scoreEngine');
 const { getMacroForAI, getNewsForAI, getSupplyForAI } = require('../macro/context');
+const { getUniverseDistribution } = require('../../lib/universeCache');
+const { rankStock } = require('../../lib/universe');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -45,8 +47,12 @@ module.exports = async (req, res) => {
   const stockData = req.body || {};
   const price = stockData.price || stockData.currentPrice || 0;
 
-  // 1) 점수 엔진 — 객관적 계산
+  // 1) 점수 엔진 — 객관적 계산 (+ 유니버스 백분위 랭킹 주입)
   const input = buildEngineInput(stockData);
+  try {
+    const dist = await getUniverseDistribution();
+    if (dist) input.universeRank = rankStock({ per: stockData.per, pbr: stockData.pbr, marketCap: stockData.marketCap }, dist);
+  } catch (_) { /* 분포 없으면 랭킹 생략 */ }
   const engine = runScoreEngine(input, mode);
   const base = priceTargets(price, engine.recommendation, mode);
   // 목표가: 적정가가 신뢰가능하게 계산됐으면 그것을, 아니면 추천강도 기반 폴백
@@ -84,6 +90,9 @@ ${fv && Number.isFinite(fv.fairValue)
   ? `적정가(코드 계산): ${fv.fairValue.toLocaleString()}원 / 안전마진: ${fv.marginOfSafety >= 0 ? '+' : ''}${fv.marginOfSafety}% (산출방식: ${fv.methods.map(m => m.name).join('·')}, 신뢰도 ${fv.confidence})`
   : `적정가: ${fv?.note || '추정 불가'}`}
 ${engine.missingFactors.length ? `미연동 팩터: ${engine.missingFactors.join(', ')} (신뢰도에 정직하게 반영됨)` : ''}
+${engine.universeRank && engine.universeRank.items.length
+  ? `유니버스 상대 위치(전종목 ${engine.universeRank.universeSize}개 대비): ${engine.universeRank.items.map(i => i.label).join(' · ')}${engine.universeRank.valueSummary ? ` → ${engine.universeRank.valueSummary}` : ''}`
+  : ''}
 
 [팩터별 점수]
 ${factorLines}
@@ -123,7 +132,11 @@ ${Array.isArray(stockData.newsHeadlines) && stockData.newsHeadlines.length
 A. "정성 평가 근거 자료"의 DART 사업보고서 발췌(사업의 개요)·뉴스 헤드라인·DART 공시 사실(설립/업력/시장/배당)·업종, 그리고 그 기업에 일반적으로 알려진 사실은 모두 정당한 1차 근거다. 특히 사업보고서 발췌가 있으면 사업모델·해자 판단의 핵심 근거로 우선 활용하라.
 B. 각 판단의 evidence에는 근거로 삼은 사업보고서 문구·헤드라인·DART 사실·업종 특성을 구체적으로 인용한다. (예: "사업보고서상 DRAM·NAND 중심 메모리 반도체 기업", "업력 59년·배당성향 27.7%로 안정적")
 C. "판단보류"는 해당 항목과 관련된 정보가 제공 자료에 전혀 없을 때만 쓴다. 정보가 일부라도 있으면 보수적으로라도 강/중/약을 판단하라.
-D. 단, 제공되지 않은 구체적 수치(시장점유율 X% 등)를 임의로 지어내지 말 것. 모르면 정성적 표현으로만 서술한다.`;
+D. 단, 제공되지 않은 구체적 수치(시장점유율 X% 등)를 임의로 지어내지 말 것. 모르면 정성적 표현으로만 서술한다.
+
+[양면 의무 — Bull/Bear]
+E. bullBear는 필수다. 강세 논리 3개·약세 논리 2개를 반드시 채운다. 추천이 매수든 매도든 양쪽을 모두 제시한다(한쪽만 쓰지 말 것).
+F. 약세 논리(bear)는 "이 전제가 깨지면 투자 논리가 무너지는" 핵심 리스크여야 한다. 막연한 일반론 금지, 이 종목의 팩터·밸류·사업가치에 근거할 것.`;
 
   const userContent = `${engineBlock}
 
@@ -140,6 +153,10 @@ D. 단, 제공되지 않은 구체적 수치(시장점유율 X% 등)를 임의�
     "sustainability": { "level": "강|중|약|판단보류", "risk": "주요 지속가능성 리스크 또는 '특이사항 없음'", "evidence": "근거 또는 '근거 부족'" },
     "overall": "강|중|약|판단보류",
     "summary": "이 회사 사업가치를 한 문장으로 (근거 기반, 과장 금지)"
+  },
+  "bullBear": {
+    "bull": ["강세 논리 3개 — 이 종목이 오를 근거(팩터·적정가·유니버스 위치·사업가치 활용)", "", ""],
+    "bear": ["약세 논리 2개 — 이 논리가 깨지면 투자 전제가 무너지는 핵심 리스크", ""]
   }
 }`;
 
@@ -174,6 +191,7 @@ D. 단, 제공되지 않은 구체적 수치(시장점유율 X% 등)를 임의�
       recommendation: engine.recommendation,
       score: engine.score,
       confidence: finalConfidence,
+      confidenceBasis: engine.confidenceBasis,  // 신뢰도 근거 분해(커버리지/일치도/적중률)
       agreement: engine.agreement,
       dataCompleteness: engine.dataCompleteness,
       factors: engine.factors,        // 팩터별 점수/라벨/근거 (UI 막대용)
@@ -183,6 +201,8 @@ D. 단, 제공되지 않은 구체적 수치(시장점유율 X% 등)를 임의�
       valuation: engine.valuation,    // 적정가·안전마진·산출방식 (UI 적정가 카드용)
       businessValue,                  // 정성 사업가치(AI, 근거인용) — 해자·산업·지속성
       crossCheck,                     // 정량×정성 교차검증 판정(가치함정 등)
+      universeRank: engine.universeRank,  // 유니버스 백분위(밸류·규모 상대 위치)
+      bullBear: interp?.bullBear || null, // 강세/약세 양면 논리
     },
     targetPrice,
     stopLoss,
