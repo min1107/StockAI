@@ -55,6 +55,23 @@ export const getKISFinancials = async (stockCode) => {
   }
 };
 
+// 2-2. DART 기업 프로필 (설립·시장·배당) — 정성평가 근거용. 국내주식만.
+export const getDartProfile = async (stockCode) => {
+  try {
+    const code = String(stockCode).split('.')[0];
+    if (!/^[0-9]{6}$/.test(code)) return null;
+    const response = await axios.get(`${SERVER}/api/dart/profile`, {
+      params: { code },
+      timeout: API_TIMEOUT,
+    });
+    console.log(`✅ [${code}] DART:`, response.data?.corpName, '업력', response.data?.ageYears);
+    return response.data;
+  } catch (error) {
+    console.warn('⚠️ DART 프로필 조회 실패(정성평가 일부 근거 미반영):', error.message);
+    return null;
+  }
+};
+
 // 3. 투자자별 매매동향 (기관/외국인)
 export const getKISInvestorTrend = async (stockCode) => {
   try {

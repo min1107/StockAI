@@ -14,7 +14,7 @@
  */
 
 const Groq = require('groq-sdk');
-const { runScoreEngine, buildEngineInput } = require('../../lib/scoreEngine');
+const { runScoreEngine, buildEngineInput, crossCheckBusinessValue } = require('../../lib/scoreEngine');
 const { getMacroForAI, getNewsForAI, getSupplyForAI } = require('../macro/context');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -48,7 +48,12 @@ module.exports = async (req, res) => {
   // 1) 점수 엔진 — 객관적 계산
   const input = buildEngineInput(stockData);
   const engine = runScoreEngine(input, mode);
-  const { targetPrice, stopLoss } = priceTargets(price, engine.recommendation, mode);
+  const base = priceTargets(price, engine.recommendation, mode);
+  // 목표가: 적정가가 신뢰가능하게 계산됐으면 그것을, 아니면 추천강도 기반 폴백
+  const fv = engine.valuation;
+  const useFair = fv && Number.isFinite(fv.fairValue) && (fv.confidence === 'high' || fv.confidence === 'medium');
+  const targetPrice = useFair ? fv.fairValue : base.targetPrice;
+  const stopLoss = base.stopLoss;
 
   // 2) 맥락 수집 (AI 해석 재료)
   let macroSection = '';
@@ -75,6 +80,9 @@ module.exports = async (req, res) => {
 종합 추천: ${engine.recommendation}
 종합 점수: ${engine.score} (-100~+100)
 신뢰도: ${engine.confidence}% (팩터 일치도 ${engine.agreement}%, 데이터 충실도 ${engine.dataCompleteness}%)
+${fv && Number.isFinite(fv.fairValue)
+  ? `적정가(코드 계산): ${fv.fairValue.toLocaleString()}원 / 안전마진: ${fv.marginOfSafety >= 0 ? '+' : ''}${fv.marginOfSafety}% (산출방식: ${fv.methods.map(m => m.name).join('·')}, 신뢰도 ${fv.confidence})`
+  : `적정가: ${fv?.note || '추정 불가'}`}
 ${engine.missingFactors.length ? `미연동 팩터: ${engine.missingFactors.join(', ')} (신뢰도에 정직하게 반영됨)` : ''}
 
 [팩터별 점수]
@@ -82,7 +90,22 @@ ${factorLines}
 
 [함정 가드]
 ${guardLines}
-${macroSection ? `\n[시장 맥락]\n${macroSection}` : ''}`;
+${macroSection ? `\n[시장 맥락]\n${macroSection}` : ''}
+
+[정성 평가 근거 자료]
+업종/섹터: ${stockData.sector || '미상'}
+${(() => {
+  const dp = stockData.dartProfile;
+  if (!dp) return 'DART 공시 정보: (미연동)';
+  const div = dp.dividend
+    ? `배당성향 ${dp.dividend.payoutRatio ?? '?'}% · 시가배당률 ${dp.dividend.yieldRate ?? '?'}% (${dp.dividend.year}년)`
+    : '배당 내역 없음/미상';
+  return `DART 공시 사실: ${dp.corpName || ''} · 설립 ${dp.established || '?'}(업력 ${dp.ageYears ?? '?'}년) · ${dp.market || ''} · 대표 ${dp.ceo || '?'} · ${div}`;
+})()}
+종목 관련 뉴스 헤드라인:
+${Array.isArray(stockData.newsHeadlines) && stockData.newsHeadlines.length
+  ? stockData.newsHeadlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
+  : '(종목별 뉴스 없음)'}`;
 
   const systemPrompt = `당신은 증권사 리서치센터의 애널리스트다. 점수 엔진이 산출한 객관적 결과를 받아 "사람이 이해할 해석"을 작성한다.
 절대 규칙:
@@ -91,7 +114,13 @@ ${macroSection ? `\n[시장 맥락]\n${macroSection}` : ''}`;
 3. 미연동 팩터가 있으면 "해당 부분은 데이터 미반영"이라고 정직하게 언급할 것. 없는 데이터를 지어내지 말 것.
 4. 시장 뉴스/매크로 중 이 종목·섹터와 관련된 게 있으면 구체적으로 연결할 것.
 5. 말투: 증권사 리포트의 정중한 존댓말(~입니다/~습니다). 반말·축약 금지. 한글만.
-6. JSON 외 텍스트 출력 금지.`;
+6. JSON 외 텍스트 출력 금지.
+
+[사업가치(정성) 평가 — 근거 기반 판단]
+A. "정성 평가 근거 자료"의 뉴스 헤드라인·DART 공시 사실(설립/업력/시장/배당)·업종, 그리고 그 기업에 일반적으로 알려진 사실은 모두 정당한 1차 근거다. 이를 적극 활용해 해자·산업·지속성을 강/중/약으로 판단하라.
+B. 각 판단의 evidence에는 근거로 삼은 헤드라인 문구·DART 사실·업종 특성을 구체적으로 인용한다. (예: "업력 59년·배당성향 27.7%로 안정적", "헤드라인 2번 미국 전기차 판매 호조")
+C. "판단보류"는 해당 항목과 관련된 정보가 제공 자료에 전혀 없을 때만 쓴다. 정보가 일부라도 있으면 보수적으로라도 강/중/약을 판단하라.
+D. 단, 제공되지 않은 구체적 수치(시장점유율 X% 등)를 임의로 지어내지 말 것. 모르면 정성적 표현으로만 서술한다.`;
 
   const userContent = `${engineBlock}
 
@@ -101,7 +130,14 @@ ${macroSection ? `\n[시장 맥락]\n${macroSection}` : ''}`;
   "interpretation": "팩터 점수들이 무엇을 의미하는지, 왜 이런 추천인지 2~3문장 해석. 가장 강한 팩터와 약한 팩터를 짚을 것.",
   "actionPlan": "지금 투자자가 취할 구체적 행동 (진입/분할/관망/매도 방식). 1~2문장.",
   "watchOut": "주의할 리스크나 확인이 필요한 지점 1문장. 미연동 팩터가 있으면 여기서 언급.",
-  "macroLink": "시장 맥락(매크로/뉴스)과의 연결. 관련 없으면 빈 문자열."
+  "macroLink": "시장 맥락(매크로/뉴스)과의 연결. 관련 없으면 빈 문자열.",
+  "businessValue": {
+    "moat": { "level": "강|중|약|판단보류", "type": "브랜드|네트워크효과|전환비용|원가우위|무형자산|없음|미상", "evidence": "근거(인용/사실) 또는 '근거 부족'" },
+    "industry": { "trend": "성장|성숙|사양|미상", "position": "산업 내 위치 한 줄", "evidence": "근거 또는 '근거 부족'" },
+    "sustainability": { "level": "강|중|약|판단보류", "risk": "주요 지속가능성 리스크 또는 '특이사항 없음'", "evidence": "근거 또는 '근거 부족'" },
+    "overall": "강|중|약|판단보류",
+    "summary": "이 회사 사업가치를 한 문장으로 (근거 기반, 과장 금지)"
+  }
 }`;
 
   let interp = null;
@@ -109,7 +145,7 @@ ${macroSection ? `\n[시장 맥락]\n${macroSection}` : ''}`;
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       temperature: mode === 'aggressive' ? 0.6 : 0.4,
-      max_tokens: 900,
+      max_tokens: 1300,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
@@ -122,18 +158,28 @@ ${macroSection ? `\n[시장 맥락]\n${macroSection}` : ''}`;
     console.error('score AI interp error:', error.message);
   }
 
-  // 4) 엔진 숫자 + AI 해석 결합 (숫자는 항상 엔진 것)
+  // 4) 정량 × 정성 교차검증 (코드 — 결정론). AI의 사업가치 판단을 품질 점수와 교차.
+  const businessValue = interp?.businessValue || null;
+  const qualityScore = engine.factors.find(f => f.key === 'quality')?.score ?? null;
+  const crossCheck = crossCheckBusinessValue(qualityScore, businessValue?.overall);
+  // 정성은 결론을 뒤집지 못하고 신뢰도만 보정 (가치함정 등)
+  const finalConfidence = Math.max(25, engine.confidence - crossCheck.confidencePenalty);
+
+  // 5) 엔진 숫자 + AI 해석 결합 (숫자는 항상 엔진 것)
   res.status(200).json({
     engine: {
       recommendation: engine.recommendation,
       score: engine.score,
-      confidence: engine.confidence,
+      confidence: finalConfidence,
       agreement: engine.agreement,
       dataCompleteness: engine.dataCompleteness,
       factors: engine.factors,        // 팩터별 점수/라벨/근거 (UI 막대용)
       guards: engine.guards,
       evidence: engine.evidence,
       missingFactors: engine.missingFactors,
+      valuation: engine.valuation,    // 적정가·안전마진·산출방식 (UI 적정가 카드용)
+      businessValue,                  // 정성 사업가치(AI, 근거인용) — 해자·산업·지속성
+      crossCheck,                     // 정량×정성 교차검증 판정(가치함정 등)
     },
     targetPrice,
     stopLoss,

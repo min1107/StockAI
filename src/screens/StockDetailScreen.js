@@ -497,12 +497,15 @@ export default function StockDetailScreen({ route, navigation }) {
         }
       }
 
-      // 🆕 재무비율(ROE·영업이익률·부채비율·성장률) — 점수엔진 품질/성장 팩터용. 국내주식만, 실패해도 null.
-      let financials = null;
+      // 🆕 재무비율 + DART 프로필 — 점수엔진 품질/성장 팩터 + 정성평가 근거. 국내주식만, 실패해도 null.
+      let financials = null, dartProfile = null;
       try {
-        financials = await KISAPI.getKISFinancials(symbol);
+        [financials, dartProfile] = await Promise.all([
+          KISAPI.getKISFinancials(symbol),
+          KISAPI.getDartProfile(symbol),
+        ]);
       } catch (e) {
-        console.warn('재무비율 조회 생략:', e.message);
+        console.warn('재무/DART 조회 생략:', e.message);
       }
 
       const stockDataForAI = {
@@ -530,6 +533,8 @@ export default function StockDetailScreen({ route, navigation }) {
         chartTrend: chartTrend,
         newsSentiment: newsSentiment,
         newsCount: currentNews.length,
+        newsHeadlines: currentNews.slice(0, 6).map(n => n.title).filter(Boolean), // 정성평가 근거 인용용
+        dartProfile, // 🆕 DART 정형 사실(설립·업력·시장·배당) — 정성평가 근거
         institutional: updatedInstitutionalData,
         // 🆕 수급 추세 분석 데이터
         supplyAnalysis: {

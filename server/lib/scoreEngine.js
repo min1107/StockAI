@@ -14,6 +14,8 @@
  * 이 모듈은 순수 함수다. 입력이 없으면 null 팩터로 처리하고 절대 던지지 않는다.
  */
 
+const { computeFairValue } = require('./valuation');
+
 // ── 보수 vs 공격: 같은 데이터, 다른 가중치 (AI_ENGINE.md §3) ──────────
 const WEIGHTS = {
   conservative: { value: 1.6, quality: 1.5, growth: 1.0, technical: 0.7, supply: 1.0, catalyst: 1.0 },
@@ -40,10 +42,45 @@ function factor(key, name, score, label, detail) {
 }
 
 // ── ① 밸류에이션 — "싼가?" ────────────────────────────────────────────
-// PER(섹터 대비), PBR, PEG, 배당. 섹터 평균은 입력으로 받되 없으면 보수적 기본값.
-function scoreValuation({ per, pbr, peg, dividendYield, sectorPer }) {
+// 핵심은 적정가 대비 안전마진(MOS, B-1). 적정가 없으면 PER·PBR로 폴백.
+function scoreValuation({ per, pbr, peg, dividendYield, sectorPer, fairValue, marginOfSafety, upside, fairValueConfidence }) {
+  // 적정가가 계산됐으면 안전마진을 주 근거로 (설계문서 B-1: 안전마진 가중 50%)
+  if (isNum(fairValue) && isNum(marginOfSafety)) {
+    let s;
+    const mos = marginOfSafety;
+    if (mos >= 30) s = 2;
+    else if (mos >= 10) s = 1;
+    else if (mos > -10) s = 0;
+    else if (mos > -30) s = -1;
+    else s = -2;
+
+    const gap = isNum(upside) ? upside : mos; // 표시용 상승여력
+    const bits = [`적정가 ${fairValue.toLocaleString()}원 (적정가까지 ${gap >= 0 ? '+' : ''}${gap.toFixed(0)}%)`];
+
+    // PER·PBR로 보조 보정 (적정가가 주, ±1 범위 내에서만 미세 조정)
+    let adj = 0;
+    if (isNum(per) && per > 0) {
+      const ref = isNum(sectorPer) && sectorPer > 0 ? sectorPer : 12;
+      if (per / ref <= 0.7) { adj += 0.5; bits.push(`PER ${per.toFixed(1)} (기준 대비 저렴)`); }
+      else if (per / ref >= 1.4) { adj -= 0.5; bits.push(`PER ${per.toFixed(1)} (기준 대비 비쌈)`); }
+      else bits.push(`PER ${per.toFixed(1)}`);
+    }
+    if (isNum(pbr) && pbr > 0) {
+      if (pbr < 1) { adj += 0.5; bits.push(`PBR ${pbr.toFixed(2)} (순자산 이하)`); }
+      else if (pbr > 3) { adj -= 0.5; bits.push(`PBR ${pbr.toFixed(2)}`); }
+    }
+    s = clamp(Math.round(s + adj), -2, 2);
+
+    // 적정가 신뢰도 낮으면 라벨에 명시
+    if (fairValueConfidence === 'low') bits.push('적정가 신뢰도 낮음(참고용)');
+
+    const label = s >= 2 ? '저평가' : s >= 1 ? '다소 저평가' : s <= -2 ? '고평가' : s <= -1 ? '다소 고평가' : '적정';
+    return factor('value', '밸류에이션', s, label, bits.join(' · '));
+  }
+
+  // ── 폴백: 적정가 못 구할 때 PER·PBR 상대 평가 ──
   if (!isNum(per) && !isNum(pbr)) {
-    return factor('value', '밸류에이션', null, '데이터 없음 (PER·PBR 미연동)');
+    return factor('value', '밸류에이션', null, '데이터 없음 (적정가·PER·PBR 미연동)');
   }
   let s = 0;
   const bits = [];
@@ -360,6 +397,7 @@ function runScoreEngine(input = {}, mode = 'conservative') {
     agreement: Math.round(agreement * 100),
     evidence,
     missingFactors: factors.filter(f => !f.available).map(f => f.name),
+    valuation: input.fairValueResult || null,   // 적정가·안전마진 (프론트 노출용)
   };
 }
 
@@ -370,19 +408,35 @@ function runScoreEngine(input = {}, mode = 'conservative') {
 function buildEngineInput(stockData = {}) {
   const price = stockData.price || stockData.currentPrice || 0;
   const high = stockData.fiftyTwoWeekHigh || 0;
-  const marginOfSafety = high > 0 ? ((high - price) / high) * 100 : null;
+  // 52주 고점 대비 낙폭 — '떨어지는 칼날' 가드 전용 (내재가치 안전마진과는 다름)
+  const drawdownFrom52w = high > 0 ? ((high - price) / high) * 100 : null;
   const supply = stockData.supplyAnalysis || {};
   const quant = stockData.quantAnalysis || {};
 
+  // 내재가치 기반 적정가·안전마진 (결정론 계산)
+  const fv = computeFairValue({
+    price,
+    eps: stockData.eps ?? null,
+    bps: stockData.bps ?? null,
+    roe: stockData.roe ?? null,
+    earningsGrowth: stockData.earningsGrowth ?? null,
+    sectorPer: stockData.sectorPer ?? null,
+  });
+
   return {
     isHolding: !!stockData.portfolioHolding,
-    marginOfSafety,
+    marginOfSafety: drawdownFrom52w,   // 가드용 낙폭
+    fairValueResult: fv,               // runScoreEngine이 결과에 노출
     valuation: {
       per: stockData.per ?? null,
       pbr: stockData.pbr ?? null,
       peg: stockData.peg ?? null,
       dividendYield: stockData.dividendYield ?? null,
       sectorPer: stockData.sectorPer ?? null,
+      fairValue: fv.fairValue,
+      marginOfSafety: fv.marginOfSafety,   // 내재가치 기반 안전마진 (밸류 팩터 주 근거)
+      upside: fv.upside,                   // 표시용 상승여력
+      fairValueConfidence: fv.confidence,
     },
     quality: {
       roe: stockData.roe ?? null,
@@ -420,4 +474,48 @@ function buildEngineInput(stockData = {}) {
   };
 }
 
-module.exports = { runScoreEngine, buildEngineInput, WEIGHTS };
+/**
+ * 정량 × 정성 교차검증 (AI_ENGINE.md §5) — 결정론 코드.
+ * 정량 품질(숫자)과 정성 사업가치(AI 판단)를 교차해 가치함정 등을 가른다.
+ * 정성은 결론을 뒤집지 못하고 '판정·경고'에만 관여한다(설계 원칙).
+ *
+ * @param {number|null} qualityScore - 품질 팩터 점수(-2~+2)
+ * @param {'강'|'중'|'약'|'판단보류'|null} bizStrength - AI 사업가치 종합
+ * @returns {{verdict:string, valueTrap:boolean, text:string, confidencePenalty:number}}
+ */
+function crossCheckBusinessValue(qualityScore, bizStrength) {
+  const q = isNum(qualityScore)
+    ? (qualityScore >= 1 ? 'high' : qualityScore <= -1 ? 'low' : 'mid')
+    : 'unknown';
+  const biz = bizStrength === '강' ? 'strong'
+            : bizStrength === '약' ? 'weak'
+            : bizStrength === '중' ? 'mid'
+            : 'unknown';
+
+  // 정성·정량 중 하나라도 모르면 교차검증 보류
+  if (q === 'unknown' || biz === 'unknown') {
+    return {
+      verdict: '판단보류',
+      valueTrap: false,
+      text: '정량 품질 또는 정성 사업가치 근거가 부족해 교차검증을 보류합니다.',
+      confidencePenalty: 0,
+    };
+  }
+
+  if (q === 'high' && biz === 'strong')
+    return { verdict: '진짜 우량', valueTrap: false, text: '재무(정량)와 사업가치(정성)가 모두 강함 — 장기 보유 적합', confidencePenalty: 0 };
+  if (q === 'high' && biz === 'weak')
+    return { verdict: '가치 함정 경고', valueTrap: true, text: '숫자는 좋아 보이나 사업·해자가 약함 — 싸 보여도 함정일 수 있어 가치 판단 신뢰 하향', confidencePenalty: 12 };
+  if (q === 'high' && biz === 'mid')
+    return { verdict: '우량', valueTrap: false, text: '재무는 우량, 사업가치는 보통 — 무난하나 해자 확인 필요', confidencePenalty: 0 };
+  if (q === 'mid' && biz === 'strong')
+    return { verdict: '성장 후보', valueTrap: false, text: '재무는 보통이나 사업·해자가 강함 — 지금 비싸도 워치리스트 대상', confidencePenalty: 0 };
+  if (q === 'low' && biz === 'strong')
+    return { verdict: '혼조', valueTrap: false, text: '사업은 강하나 재무가 취약 — 재무 개선 확인 전 신중', confidencePenalty: 6 };
+  if (q === 'low' && biz === 'weak')
+    return { verdict: '회피', valueTrap: true, text: '재무도 사업도 약함 — 회피 권장', confidencePenalty: 12 };
+
+  return { verdict: '중립', valueTrap: false, text: '정량·정성이 뚜렷한 신호를 주지 않음', confidencePenalty: 0 };
+}
+
+module.exports = { runScoreEngine, buildEngineInput, crossCheckBusinessValue, WEIGHTS };

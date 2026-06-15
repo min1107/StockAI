@@ -113,6 +113,118 @@ function VerdictCard({ engine, interpretation }) {
   );
 }
 
+// ─── 적정가 카드 (코드 결정론 계산) ─────────────────────────────────────────
+const FV_CONF_LABEL = { high: '높음', medium: '보통', low: '낮음(참고용)', none: '추정 불가' };
+
+function FairValueCard({ valuation }) {
+  if (!valuation) return null;
+  const { fairValue, upside, methods = [], confidence, note } = valuation;
+
+  // 적정가 추정 불가 (적자·데이터 부족) — 정직하게 표시
+  if (!fairValue) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>적정가 · 안전마진</Text>
+        <Text style={styles.fvNoneText}>{note || '적정가를 추정할 수 없습니다 (데이터 부족)'}</Text>
+      </View>
+    );
+  }
+
+  const up = typeof upside === 'number' ? upside : 0;
+  const upColor = up >= 0 ? POS : NEG;
+  const verdict = up >= 20 ? '저평가' : up >= -10 ? '적정' : '고평가';
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>적정가 · 안전마진</Text>
+      <View style={styles.fvTopRow}>
+        <View>
+          <Text style={styles.fvLabel}>코드 산출 적정가</Text>
+          <Text style={styles.fvPrice}>₩{fairValue.toLocaleString()}</Text>
+        </View>
+        <View style={styles.fvUpsideBlock}>
+          <Text style={[styles.fvUpside, { color: upColor }]}>{up >= 0 ? '+' : ''}{up.toFixed(0)}%</Text>
+          <Text style={[styles.fvVerdict, { color: upColor }]}>{verdict}</Text>
+        </View>
+      </View>
+
+      {/* 산출방식 투명 공개 */}
+      {methods.length ? (
+        <View style={styles.fvMethods}>
+          {methods.map((m) => (
+            <View key={m.name} style={styles.fvMethodChip}>
+              <Text style={styles.fvMethodName}>{m.name}</Text>
+              <Text style={styles.fvMethodVal}>₩{m.value.toLocaleString()}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <Text style={styles.fvFootnote}>
+        {methods.length}개 방식 중앙값 · 신뢰도 {FV_CONF_LABEL[confidence] || confidence}
+        {note ? ` · ${note}` : ''}
+      </Text>
+    </View>
+  );
+}
+
+// ─── 사업가치(정성) + 교차검증 카드 ─────────────────────────────────────────
+const CROSS_COLOR = {
+  '진짜 우량': POS, '우량': POS, '성장 후보': '#4FC3F7',
+  '가치 함정 경고': NEG, '회피': NEG, '혼조': NEU, '중립': MUTED, '판단보류': MUTED,
+};
+const LEVEL_COLOR = { '강': POS, '중': NEU, '약': NEG, '판단보류': MUTED };
+
+function BusinessValueCard({ businessValue, crossCheck }) {
+  if (!businessValue && !crossCheck) return null;
+  const cc = crossCheck;
+  const bv = businessValue;
+  const ccColor = cc ? (CROSS_COLOR[cc.verdict] || MUTED) : MUTED;
+
+  const rows = [];
+  if (bv?.moat) rows.push({ k: '경제적 해자', lv: bv.moat.level, sub: bv.moat.type, ev: bv.moat.evidence });
+  if (bv?.industry) rows.push({ k: '산업·경쟁', lv: bv.industry.trend, sub: bv.industry.position, ev: bv.industry.evidence });
+  if (bv?.sustainability) rows.push({ k: '지속가능성', lv: bv.sustainability.level, sub: bv.sustainability.risk, ev: bv.sustainability.evidence });
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.aiTitleRow}>
+        <Text style={styles.cardTitle}>사업가치 · 교차검증</Text>
+        <View style={styles.aiBadge}><Text style={styles.aiBadgeText}>정성 AI · 근거 인용</Text></View>
+      </View>
+
+      {/* 정량×정성 교차검증 판정 */}
+      {cc ? (
+        <View style={[styles.bvVerdict, { borderColor: ccColor + '55', backgroundColor: ccColor + '14' }]}>
+          <Text style={[styles.bvVerdictLabel, { color: ccColor }]}>
+            {cc.valueTrap ? '⚠️ ' : ''}{cc.verdict}
+          </Text>
+          <Text style={styles.bvVerdictText}>{cc.text}</Text>
+        </View>
+      ) : null}
+
+      {/* 사업가치 요약 */}
+      {bv?.summary ? <Text style={styles.bvSummary}>{bv.summary}</Text> : null}
+
+      {/* 항목별 강/중/약 + 근거 */}
+      {rows.map((r) => (
+        <View key={r.k} style={styles.bvRow}>
+          <View style={styles.bvRowHead}>
+            <Text style={styles.bvRowKey}>{r.k}</Text>
+            {r.lv ? (
+              <View style={[styles.bvLevelBadge, { backgroundColor: (LEVEL_COLOR[r.lv] || MUTED) + '20' }]}>
+                <Text style={[styles.bvLevelText, { color: LEVEL_COLOR[r.lv] || MUTED }]}>{r.lv}</Text>
+              </View>
+            ) : null}
+            {r.sub ? <Text style={styles.bvRowSub} numberOfLines={1}>{r.sub}</Text> : null}
+          </View>
+          {r.ev ? <Text style={styles.bvEvidence}>근거: {r.ev}</Text> : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ─── 팩터 다이버징 막대 ──────────────────────────────────────────────────────
 function FactorBar({ factor }) {
   const { name, key, score, available, label, detail } = factor;
@@ -261,6 +373,8 @@ export default function ScoreAnalysis({ conservative, aggressive, loading }) {
       ) : (
         <>
           <VerdictCard engine={engine} interpretation={data.interpretation} />
+          <FairValueCard valuation={engine.valuation} />
+          <BusinessValueCard businessValue={engine.businessValue} crossCheck={engine.crossCheck} />
           <FactorsCard factors={engine.factors} />
           <GuardsCard guards={engine.guards} />
           <InterpretationCard interpretation={data.interpretation} />
@@ -353,6 +467,39 @@ const styles = StyleSheet.create({
   confMetaLabel: { fontSize: 10, color: '#6B7280', marginBottom: 3 },
   confMetaValue: { fontSize: 15, fontWeight: '700', color: '#C0C8E0' },
   confMetaDivider: { width: 1, height: 28, backgroundColor: '#252A47' },
+
+  // 적정가 카드
+  fvTopRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  fvLabel: { fontSize: 10, color: '#6B7280', marginBottom: 3, fontWeight: '500' },
+  fvPrice: { fontSize: 24, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  fvUpsideBlock: { alignItems: 'flex-end' },
+  fvUpside: { fontSize: 22, fontWeight: '800' },
+  fvVerdict: { fontSize: 11, fontWeight: '700', marginTop: 2 },
+  fvMethods: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  fvMethodChip: {
+    backgroundColor: '#0D1128', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    borderWidth: 1, borderColor: '#1E2340', alignItems: 'center', flexGrow: 1, minWidth: '30%',
+  },
+  fvMethodName: { fontSize: 10, color: '#6B7280', marginBottom: 2 },
+  fvMethodVal: { fontSize: 12, fontWeight: '700', color: '#C0C8E0' },
+  fvFootnote: { fontSize: 10, color: '#6B7280', lineHeight: 15 },
+  fvNoneText: { fontSize: 13, color: '#9AA3B5', lineHeight: 19 },
+
+  // 사업가치 카드
+  bvVerdict: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 12 },
+  bvVerdictLabel: { fontSize: 15, fontWeight: '800', marginBottom: 4 },
+  bvVerdictText: { fontSize: 12, color: '#9AA3B5', lineHeight: 17 },
+  bvSummary: { fontSize: 13, color: '#C0C8E0', lineHeight: 19, marginBottom: 12 },
+  bvRow: { marginBottom: 11 },
+  bvRowHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  bvRowKey: { fontSize: 12, fontWeight: '700', color: '#C0C8E0' },
+  bvLevelBadge: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  bvLevelText: { fontSize: 11, fontWeight: '700' },
+  bvRowSub: { fontSize: 11, color: '#8892A4', flex: 1 },
+  bvEvidence: { fontSize: 11, color: '#6B7280', lineHeight: 16, fontStyle: 'italic' },
 
   // 팩터 막대
   factorRow: { marginBottom: 14 },
