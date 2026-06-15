@@ -22,6 +22,7 @@ import { addHolding, getHoldings } from '../services/portfolioAPI';
 
 // 컴포넌트
 import AIAnalysis from '../components/AIAnalysis';
+import ScoreAnalysis from '../components/ScoreAnalysis';
 import ETFList from '../components/ETFList';
 import InstitutionalTrade from '../components/InstitutionalTrade';
 import NewsList from '../components/NewsList';
@@ -29,7 +30,7 @@ import PriceChart from '../components/PriceChart';
 import QuantAnalysis from '../components/QuantAnalysis';
 
 // API
-import { analyzeStockConservative, analyzeStockAggressive } from '../services/groqAPI';
+import { analyzeStockConservative, analyzeStockAggressive, analyzeStockScore } from '../services/groqAPI';
 import * as KISAPI from '../services/kisAPI';
 
 import { LineChart } from 'react-native-chart-kit';
@@ -81,6 +82,10 @@ export default function StockDetailScreen({ route, navigation }) {
   const [conservativeAnalysis, setConservativeAnalysis] = useState(null);
   const [aggressiveAnalysis, setAggressiveAnalysis] = useState(null);
   const [aiLoading, setAiLoading] = useState(true);
+
+  // 점수 엔진 분석 (보수/공격) — docs/AI_ENGINE.md
+  const [scoreConservative, setScoreConservative] = useState(null);
+  const [scoreAggressive, setScoreAggressive] = useState(null);
 
   // 포트폴리오 보유 정보
   const [userHolding, setUserHolding] = useState(null);
@@ -492,6 +497,14 @@ export default function StockDetailScreen({ route, navigation }) {
         }
       }
 
+      // 🆕 재무비율(ROE·영업이익률·부채비율·성장률) — 점수엔진 품질/성장 팩터용. 국내주식만, 실패해도 null.
+      let financials = null;
+      try {
+        financials = await KISAPI.getKISFinancials(symbol);
+      } catch (e) {
+        console.warn('재무비율 조회 생략:', e.message);
+      }
+
       const stockDataForAI = {
         name: name,
         price: data.regularMarketPrice,
@@ -500,6 +513,19 @@ export default function StockDetailScreen({ route, navigation }) {
         marketCap: data.marketCap,
         fiftyTwoWeekHigh: data.fiftyTwoWeekHigh,
         fiftyTwoWeekLow: data.fiftyTwoWeekLow,
+        // 🆕 펀더멘털 (점수 엔진 밸류·품질 팩터용) — 한국주식만 제공, 미국주식은 null
+        per: data.per ?? null,
+        pbr: data.pbr ?? null,
+        eps: data.eps ?? null,
+        bps: data.bps ?? null,
+        sector: data.sector ?? null,
+        // 🆕 KIS 재무비율 (품질·성장 팩터) — 없으면 null → 엔진이 정직하게 신뢰도 하향
+        roe: financials?.roe ?? null,
+        netMargin: financials?.netMargin ?? null,
+        debtRatio: financials?.debtRatio ?? null,
+        revenueGrowth: financials?.revenueGrowth ?? null,
+        earningsGrowth: financials?.earningsGrowth ?? null,
+        financialsAsOf: financials?.asOf ?? null,
         pricePosition: pricePosition,
         chartTrend: chartTrend,
         newsSentiment: newsSentiment,
@@ -528,14 +554,18 @@ export default function StockDetailScreen({ route, navigation }) {
         newsCount: currentNews.length,
       });
 
-      // 두 가지 분석을 병렬로 실행
-      const [conservative, aggressive] = await Promise.all([
+      // 두 가지 분석 + 점수 엔진 분석을 병렬로 실행
+      const [conservative, aggressive, scoreCons, scoreAggr] = await Promise.all([
         analyzeStockConservative(symbol, stockDataForAI),
-        analyzeStockAggressive(symbol, stockDataForAI)
+        analyzeStockAggressive(symbol, stockDataForAI),
+        analyzeStockScore(symbol, stockDataForAI, 'conservative'),
+        analyzeStockScore(symbol, stockDataForAI, 'aggressive'),
       ]);
 
       setConservativeAnalysis(conservative);
       setAggressiveAnalysis(aggressive);
+      setScoreConservative(scoreCons);
+      setScoreAggressive(scoreAggr);
       console.log('✅ AI 분석 완료');
       console.log('  🛡️ 보수적:', conservative.recommendation, `(${conservative.confidence}%)`);
       console.log('  ⚡ 공격적:', aggressive.recommendation, `(${aggressive.confidence}%)`);
@@ -934,7 +964,16 @@ export default function StockDetailScreen({ route, navigation }) {
         );
       })()}
 
-      {/* AI 분석 섹션 */}
+      {/* 🆕 점수 엔진 분석 (6팩터) — docs/AI_ENGINE.md */}
+      <View style={styles.chartSection}>
+        <ScoreAnalysis
+          conservative={scoreConservative}
+          aggressive={scoreAggressive}
+          loading={aiLoading}
+        />
+      </View>
+
+      {/* AI 분석 섹션 (기존 — 비교용) */}
       <View style={styles.chartSection}>
         <AIAnalysis
           conservativeAnalysis={conservativeAnalysis}

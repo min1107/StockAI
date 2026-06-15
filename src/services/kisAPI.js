@@ -38,6 +38,23 @@ export const getKISStockPrice = async (stockCode) => {
   }
 };
 
+// 2-1. 재무비율 (ROE·영업이익률·부채비율·성장률) — 점수엔진 품질/성장/밸류 팩터용. 국내주식만.
+export const getKISFinancials = async (stockCode) => {
+  try {
+    const code = String(stockCode).split('.')[0]; // 'AAPL' 등 비국내는 어차피 서버가 거름
+    if (!/^[0-9]{6}$/.test(code)) return null;     // 6자리 국내 코드만
+    const response = await axios.get(`${SERVER}/api/kis/financials`, {
+      params: { code },
+      timeout: API_TIMEOUT,
+    });
+    console.log(`✅ [${code}] 재무비율: ROE`, response.data?.roe, '부채', response.data?.debtRatio);
+    return response.data;
+  } catch (error) {
+    console.warn('⚠️ 재무비율 조회 실패(점수엔진 일부 팩터 미반영):', error.message);
+    return null; // 재무 없어도 점수엔진은 다른 팩터로 동작
+  }
+};
+
 // 3. 투자자별 매매동향 (기관/외국인)
 export const getKISInvestorTrend = async (stockCode) => {
   try {
