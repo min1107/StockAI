@@ -48,6 +48,24 @@ export const analyzeStockAggressive = async (symbol, stockData) => {
   }
 };
 
+/**
+ * 점수 엔진 + AI 해석 분석 (docs/AI_ENGINE.md)
+ * - 추천·신뢰도·팩터점수는 서버 점수 엔진이 계산, AI는 해석만.
+ * - mode: 'conservative' | 'aggressive'
+ * 반환: { engine:{recommendation,score,confidence,factors,guards,...}, interpretation:{...}, targetPrice, stopLoss }
+ */
+export const analyzeStockScore = async (symbol, stockData, mode = 'conservative') => {
+  try {
+    console.log(`🧠 점수엔진 분석 시작 (${mode}):`, symbol);
+    const response = await axios.post(`${SERVER}/api/ai/score?type=${mode}`, stockData);
+    console.log('✅ 점수엔진 분석 성공:', response.data?.engine?.recommendation, `${response.data?.engine?.confidence}%`);
+    return response.data;
+  } catch (error) {
+    console.error('❌ 점수엔진 분석 실패:', error.message);
+    return null;
+  }
+};
+
 // 폴백 함수들
 const getConservativeFallback = (stockData) => {
   const supply = stockData.supplyAnalysis || {

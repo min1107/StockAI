@@ -45,3 +45,6 @@ app-example
 
 .vercel
 .env*.local
+
+# Claude Code local settings
+.claude/
