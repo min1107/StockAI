@@ -306,6 +306,19 @@ JSON:
       recommendations = [...recommendations, ...extras];
     }
 
+    // 추천 확정 종목만 실시간 시세로 현재가·등락률 갱신.
+    // (스크리닝 캐시 후보엔 changeRate가 없어 카드 등락률이 0%로 떴음 → 최종 5개만 재조회)
+    try {
+      const fresh = await fetchAllPrices(recommendations);
+      const freshMap = new Map(fresh.map(f => [f.code, f]));
+      recommendations = recommendations.map(r => {
+        const f = freshMap.get(r.code);
+        return f ? { ...r, currentPrice: f.currentPrice ?? r.currentPrice, changeRate: f.changeRate } : r;
+      });
+    } catch (e) {
+      console.warn('실시간 시세 갱신 생략:', e.message);
+    }
+
     const result = {
       recommendations,
       candidateCount: candidates.length,
