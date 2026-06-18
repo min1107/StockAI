@@ -22,28 +22,24 @@ function AIPickCard({ item, index, onPress }) {
   const priceColor = isPositive ? '#00FF88' : '#FF4466';
   const riskColor = item.riskLevel === '낮음' ? '#00D97E' : item.riskLevel === '높음' ? '#FF4466' : '#FFB800';
 
+  // 보조지표 한 줄: 섹터 · PBR · PER (알약 여러 개 대신 압축)
+  const metaParts = [];
+  if (item.sector) metaParts.push(item.sector);
+  if (item.pbr != null) metaParts.push(`PBR ${item.pbr}`);
+  if (item.per != null) metaParts.push(`PER ${item.per}`);
+
   return (
     <TouchableOpacity style={aiStyles.card} onPress={onPress} activeOpacity={0.85}>
-      {/* 상단: 랭크 + 섹터 */}
+      {/* 상단: 랭크 + 종목명(강조) + 시장 */}
       <View style={aiStyles.topRow}>
         <View style={aiStyles.rankBadge}>
           <Text style={aiStyles.rankText}>{index + 1}</Text>
         </View>
-        {item.sector ? (
-          <View style={aiStyles.sectorTag}>
-            <Text style={aiStyles.sectorText}>{item.sector}</Text>
-          </View>
-        ) : null}
-        <View style={{ flex: 1 }} />
-        {item.market ? (
-          <Text style={aiStyles.marketLabel}>{item.market}</Text>
-        ) : null}
+        <Text style={aiStyles.name} numberOfLines={1}>{item.name}</Text>
+        {item.market ? <Text style={aiStyles.marketLabel}>{item.market}</Text> : null}
       </View>
 
-      {/* 종목명 */}
-      <Text style={aiStyles.name} numberOfLines={1}>{item.name}</Text>
-
-      {/* 가격 + 등락 */}
+      {/* 가격 + 등락 (강조) */}
       <View style={aiStyles.priceRow}>
         <Text style={aiStyles.price}>₩{item.currentPrice?.toLocaleString() ?? '—'}</Text>
         <Text style={[aiStyles.change, { color: priceColor }]}>
@@ -51,24 +47,15 @@ function AIPickCard({ item, index, onPress }) {
         </Text>
       </View>
 
-      {/* PBR / PER */}
-      {(item.pbr != null || item.per != null) && (
-        <View style={aiStyles.metricsRow}>
-          {item.pbr != null && (
-            <View style={aiStyles.metricPill}>
-              <Text style={aiStyles.metricText}>PBR {item.pbr}</Text>
-            </View>
-          )}
-          {item.per != null && (
-            <View style={aiStyles.metricPill}>
-              <Text style={aiStyles.metricText}>PER {item.per}</Text>
-            </View>
-          )}
-        </View>
+      {/* 보조지표 한 줄 */}
+      {metaParts.length > 0 && (
+        <Text style={aiStyles.metaLine} numberOfLines={1}>{metaParts.join('   ·   ')}</Text>
       )}
 
-      {/* 선택 이유 */}
-      <Text style={aiStyles.reason} numberOfLines={2}>{item.reason}</Text>
+      <View style={aiStyles.divider} />
+
+      {/* 선택 이유 (핵심) */}
+      <Text style={aiStyles.reason} numberOfLines={3}>{item.reason}</Text>
 
       {/* 하단 태그 */}
       <View style={aiStyles.bottomRow}>
@@ -101,23 +88,14 @@ const aiStyles = StyleSheet.create({
     backgroundColor: '#7C3AED', justifyContent: 'center', alignItems: 'center',
   },
   rankText: { fontSize: 12, color: '#FFF', fontWeight: 'bold' },
-  sectorTag: {
-    backgroundColor: '#1E2A42', borderRadius: 6,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  sectorText: { fontSize: 11, color: '#A78BFA', fontWeight: '600' },
   marketLabel: { fontSize: 11, color: '#4A5568', fontWeight: '600' },
-  name: { fontSize: 17, color: '#FFFFFF', fontWeight: 'bold', marginBottom: 8 },
+  name: { flex: 1, fontSize: 17, color: '#FFFFFF', fontWeight: 'bold' },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 8 },
-  price: { fontSize: 18, color: '#FFFFFF', fontWeight: '700' },
+  price: { fontSize: 20, color: '#FFFFFF', fontWeight: '800', letterSpacing: -0.5 },
   change: { fontSize: 13, fontWeight: '700' },
-  metricsRow: { flexDirection: 'row', gap: 6, marginBottom: 10 },
-  metricPill: {
-    backgroundColor: '#1E2A42', borderRadius: 6,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  metricText: { fontSize: 11, color: '#60A5FA', fontWeight: '600' },
-  reason: { fontSize: 12, color: '#8A9BAE', lineHeight: 18, marginBottom: 12, flex: 1 },
+  metaLine: { fontSize: 12, color: '#6B7280', fontWeight: '600', marginBottom: 10 },
+  divider: { height: 1, backgroundColor: '#1E2A42', marginBottom: 10 },
+  reason: { fontSize: 13, color: '#A9B6C8', lineHeight: 19, marginBottom: 12, flex: 1 },
   bottomRow: { flexDirection: 'row', gap: 8, marginTop: 'auto' },
   riskTag: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
   riskText: { fontSize: 11, fontWeight: '700' },
