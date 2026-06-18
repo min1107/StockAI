@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   Modal,
   RefreshControl,
   ScrollView,
@@ -14,14 +13,11 @@ import {
   View,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { fetchStockData, searchStocks, validateStockByCode, getAIRecommendations } from '../services/stockAPI';
+import { fetchStockData, searchStocks, validateStockByCode } from '../services/stockAPI';
 import { getKISMarketIndex, warmupKISToken, getMacroContext, getSectorData } from '../services/kisAPI';
 import { loadNotifSettings, checkKospiAlert } from '../services/notificationService';
 import AIChatModal from '../components/AIChatModal';
 import { useAuth } from '../context/AuthContext';
-
-const { width: SCREEN_W } = Dimensions.get('window');
-const CARD_W = SCREEN_W * 0.72;
 
 const ONBOARDING_DONE_KEY = '@StockAI:onboardingDone';
 const FAVORITES_STORAGE_KEY = '@StockAI:favorites';
@@ -105,117 +101,6 @@ const sStyles = StyleSheet.create({
   rate: { fontSize: 11, fontWeight: '700' },
 });
 
-// ── AI 발굴 종목 카드 (캐러셀) ───────────────────────────────────────
-function AIPickCard({ item, index, onPress }) {
-  const isPositive = (item.changeRate || 0) >= 0;
-  const priceColor = isPositive ? '#00FF88' : '#FF4466';
-  const riskColor = item.riskLevel === '낮음' ? '#00D97E' : item.riskLevel === '높음' ? '#FF4466' : '#FFB800';
-
-  return (
-    <TouchableOpacity style={aiStyles.card} onPress={onPress} activeOpacity={0.85}>
-      {/* 상단: 랭크 + 섹터 */}
-      <View style={aiStyles.topRow}>
-        <View style={aiStyles.rankBadge}>
-          <Text style={aiStyles.rankText}>{index + 1}</Text>
-        </View>
-        {item.sector ? (
-          <View style={aiStyles.sectorTag}>
-            <Text style={aiStyles.sectorText}>{item.sector}</Text>
-          </View>
-        ) : null}
-        <View style={{ flex: 1 }} />
-        {item.market ? (
-          <Text style={aiStyles.marketLabel}>{item.market}</Text>
-        ) : null}
-      </View>
-
-      {/* 종목명 */}
-      <Text style={aiStyles.name} numberOfLines={1}>{item.name}</Text>
-
-      {/* 가격 + 등락 */}
-      <View style={aiStyles.priceRow}>
-        <Text style={aiStyles.price}>₩{item.currentPrice?.toLocaleString() ?? '—'}</Text>
-        <Text style={[aiStyles.change, { color: priceColor }]}>
-          {isPositive ? '▲' : '▼'} {Math.abs(item.changeRate || 0).toFixed(2)}%
-        </Text>
-      </View>
-
-      {/* PBR / PER */}
-      {(item.pbr != null || item.per != null) && (
-        <View style={aiStyles.metricsRow}>
-          {item.pbr != null && (
-            <View style={aiStyles.metricPill}>
-              <Text style={aiStyles.metricText}>PBR {item.pbr}</Text>
-            </View>
-          )}
-          {item.per != null && (
-            <View style={aiStyles.metricPill}>
-              <Text style={aiStyles.metricText}>PER {item.per}</Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* 선택 이유 */}
-      <Text style={aiStyles.reason} numberOfLines={2}>{item.reason}</Text>
-
-      {/* 하단 태그 */}
-      <View style={aiStyles.bottomRow}>
-        <View style={[aiStyles.riskTag, { borderColor: riskColor + '60', backgroundColor: riskColor + '15' }]}>
-          <Text style={[aiStyles.riskText, { color: riskColor }]}>위험 {item.riskLevel}</Text>
-        </View>
-        {item.targetPeriod && (
-          <View style={aiStyles.periodTag}>
-            <Text style={aiStyles.periodText}>{item.targetPeriod}</Text>
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-const aiStyles = StyleSheet.create({
-  card: {
-    width: CARD_W,
-    backgroundColor: '#12172E',
-    borderRadius: 16,
-    padding: 16,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#7C3AED40',
-  },
-  topRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
-  rankBadge: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: '#7C3AED', justifyContent: 'center', alignItems: 'center',
-  },
-  rankText: { fontSize: 12, color: '#FFF', fontWeight: 'bold' },
-  sectorTag: {
-    backgroundColor: '#1E2A42', borderRadius: 6,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  sectorText: { fontSize: 11, color: '#A78BFA', fontWeight: '600' },
-  marketLabel: { fontSize: 11, color: '#4A5568', fontWeight: '600' },
-  name: { fontSize: 17, color: '#FFFFFF', fontWeight: 'bold', marginBottom: 8 },
-  priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 8 },
-  price: { fontSize: 18, color: '#FFFFFF', fontWeight: '700' },
-  change: { fontSize: 13, fontWeight: '700' },
-  metricsRow: { flexDirection: 'row', gap: 6, marginBottom: 10 },
-  metricPill: {
-    backgroundColor: '#1E2A42', borderRadius: 6,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  metricText: { fontSize: 11, color: '#60A5FA', fontWeight: '600' },
-  reason: { fontSize: 12, color: '#8A9BAE', lineHeight: 18, marginBottom: 12, flex: 1 },
-  bottomRow: { flexDirection: 'row', gap: 8, marginTop: 'auto' },
-  riskTag: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  riskText: { fontSize: 11, fontWeight: '700' },
-  periodTag: {
-    backgroundColor: '#1E2A42', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
-  },
-  periodText: { fontSize: 11, color: '#8A9BAE', fontWeight: '600' },
-});
-
 // ── 메인 홈스크린 ────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
   const [favorites, setFavorites] = useState([]);
@@ -223,9 +108,6 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [aiRecommendations, setAiRecommendations] = useState([]);
-  const [aiRecoLoading, setAiRecoLoading] = useState(false);
-  const [aiRecoUpdatedAt, setAiRecoUpdatedAt] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [marketIndex, setMarketIndex] = useState(null);
@@ -244,7 +126,6 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     warmupKISToken().then(() => {
       loadMarketIndex();
-      loadAIRecommendations();
     });
     loadFavorites();
     loadMacro();
@@ -261,20 +142,6 @@ export default function HomeScreen({ navigation }) {
     if (data?.sectors?.length > 0) setSectorData(data.sectors);
   };
 
-  const loadAIRecommendations = async (forceRefresh = false) => {
-    setAiRecoLoading(true);
-    try {
-      const result = await getAIRecommendations(forceRefresh);
-      if (result.recommendations?.length > 0) {
-        setAiRecommendations(result.recommendations);
-        setAiRecoUpdatedAt(result.updatedAt);
-      }
-    } catch (error) {
-      console.error('AI 추천 로딩 실패:', error.message);
-    } finally {
-      setAiRecoLoading(false);
-    }
-  };
 
   const loadMarketIndex = async () => {
     const data = await getKISMarketIndex();
@@ -667,58 +534,6 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
         )}
-
-        {/* ── AI 발굴 종목 ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>🤖 AI 발굴 종목</Text>
-              <Text style={styles.sectionSub}>KRX 전체 종목 中 저평가 안전주</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.refreshBtn}
-              onPress={() => loadAIRecommendations(true)}
-              disabled={aiRecoLoading}
-            >
-              <Text style={styles.refreshBtnText}>{aiRecoLoading ? '분석중...' : '새로고침'}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {aiRecoLoading && aiRecommendations.length === 0 ? (
-            <View style={styles.aiLoadingBox}>
-              <ActivityIndicator color="#A78BFA" />
-              <Text style={styles.aiLoadingText}>KRX 전종목 스크리닝 중...</Text>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.aiCarousel}
-            >
-              {aiRecommendations.map((item, index) => {
-                // 서버가 올바른 형식(예: '079810.KQ')으로 주는 symbol을 우선 사용.
-                // item.market은 'KOSDAQ'/'KOSPI' 라벨이라 그대로 붙이면 '.KOSDAQ'가 되어
-                // fetchStockDetail이 한국주식으로 인식 못 하고 무한로딩됨 → 폴백 시 KS/KQ로 매핑.
-                const symbol = item.symbol
-                  || (item.code ? `${item.code}.${item.market === 'KOSDAQ' || item.market === 'KQ' ? 'KQ' : 'KS'}` : null);
-                return (
-                  <AIPickCard
-                    key={item.code || item.symbol}
-                    item={item}
-                    index={index}
-                    onPress={() => navigation.navigate('StockDetail', { symbol, name: item.name })}
-                  />
-                );
-              })}
-            </ScrollView>
-          )}
-
-          {aiRecoUpdatedAt && (
-            <Text style={styles.updatedAt}>
-              마지막 업데이트: {new Date(aiRecoUpdatedAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            </Text>
-          )}
-        </View>
 
         {/* ── 관심 종목 ── */}
         <View style={styles.section}>
