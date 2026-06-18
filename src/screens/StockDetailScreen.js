@@ -22,6 +22,7 @@ import { addHolding, getHoldings } from '../services/portfolioAPI';
 
 // 컴포넌트
 import ScoreAnalysis from '../components/ScoreAnalysis';
+import CollapsibleSection from '../components/CollapsibleSection';
 import ETFList from '../components/ETFList';
 import InstitutionalTrade from '../components/InstitutionalTrade';
 import NewsList from '../components/NewsList';
@@ -79,6 +80,8 @@ export default function StockDetailScreen({ route, navigation }) {
 
   // AI 분석 로딩 (점수 엔진)
   const [aiLoading, setAiLoading] = useState(true);
+  // 점수엔진 탭(가치/성장) — 결론·심층 두 곳이 같은 관점을 공유하도록 부모가 보관
+  const [scoreTab, setScoreTab] = useState('conservative');
 
   // 점수 엔진 분석 (보수/공격) — docs/AI_ENGINE.md
   const [scoreConservative, setScoreConservative] = useState(null);
@@ -860,191 +863,181 @@ export default function StockDetailScreen({ route, navigation }) {
         })()}
       </View>
 
-      {/* 기본 정보 */}
-      {(() => {
-        const cy = stockData.currency === 'KRW' ? '₩' : '$';
-        return (
-          <View style={styles.infoSection}>
-            <View style={styles.statsGrid}>
-              <View style={styles.statCell}>
-                <Text style={styles.statLabel}>시가</Text>
-                <Text style={styles.statValue}>{cy}{stockData.regularMarketOpen?.toLocaleString() || '-'}</Text>
-              </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statLabel}>고가</Text>
-                <Text style={[styles.statValue, { color: '#00FF88' }]}>{cy}{stockData.regularMarketDayHigh?.toLocaleString() || '-'}</Text>
-              </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statLabel}>저가</Text>
-                <Text style={[styles.statValue, { color: '#FF4466' }]}>{cy}{stockData.regularMarketDayLow?.toLocaleString() || '-'}</Text>
-              </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statLabel}>거래량</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={styles.statValue}>
-                    {stockData.regularMarketVolume
-                      ? stockData.regularMarketVolume >= 100000000
-                        ? (stockData.regularMarketVolume / 100000000).toFixed(1) + '억'
-                        : (stockData.regularMarketVolume / 10000).toFixed(0) + '만'
-                      : '-'}
-                  </Text>
-                  {isVolumeSpike && <Text style={styles.spikeTag}>{volumeRatio.toFixed(1)}x</Text>}
-                </View>
-              </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statLabel}>시총</Text>
-                <Text style={styles.statValue}>
-                  {stockData.marketCap
-                    ? stockData.marketCap >= 1000000000000
-                      ? (stockData.marketCap / 1000000000000).toFixed(1) + '조'
-                      : (stockData.marketCap / 100000000).toFixed(0) + '억'
-                    : '-'}
-                </Text>
-              </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statLabel}>PER / PBR</Text>
-                <Text style={[styles.statValue, { color: '#C0C8E0' }]}>
-                  {stockData.per != null ? stockData.per.toFixed(1) : '-'} / {stockData.pbr != null ? stockData.pbr.toFixed(1) : '-'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        );
-      })()}
-
-      {/* 재무지표 카드 */}
-      {(stockData.per != null || stockData.eps != null || stockData.bps != null) && (() => {
-        const roe = (stockData.eps != null && stockData.bps != null && stockData.bps > 0)
-          ? (stockData.eps / stockData.bps * 100).toFixed(1)
-          : null;
-        const cy = stockData.currency === 'KRW' ? '₩' : '$';
-        const items = [
-          { label: 'PER', value: stockData.per != null ? `${stockData.per.toFixed(1)}배` : '-', desc: '주가수익비율' },
-          { label: 'PBR', value: stockData.pbr != null ? `${stockData.pbr.toFixed(1)}배` : '-', desc: '주가순자산비율' },
-          { label: 'EPS', value: stockData.eps != null ? `${cy}${stockData.eps.toLocaleString()}` : '-', desc: '주당순이익' },
-          { label: 'BPS', value: stockData.bps != null ? `${cy}${stockData.bps.toLocaleString()}` : '-', desc: '주당순자산' },
-          { label: 'ROE', value: roe != null ? `${roe}%` : '-', desc: '자기자본이익률', highlight: roe != null && parseFloat(roe) >= 15 ? '#00FF88' : roe != null && parseFloat(roe) < 5 ? '#FF4466' : '#C0C8E0' },
-        ];
-        return (
-          <View style={styles.chartSection}>
-            <Text style={styles.sectionTitle}>재무지표</Text>
-            <View style={finStyles.grid}>
-              {items.map(item => (
-                <View key={item.label} style={finStyles.cell}>
-                  <Text style={finStyles.label}>{item.label}</Text>
-                  <Text style={[finStyles.value, item.highlight ? { color: item.highlight } : {}]}>{item.value}</Text>
-                  <Text style={finStyles.desc}>{item.desc}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        );
-      })()}
-
-      {/* 🆕 점수 엔진 분석 (6팩터) — docs/AI_ENGINE.md */}
+      {/* AI 종합 판단 — 결론(추천·점수·헤드라인)만 항상 노출 (고정) */}
       <View style={styles.chartSection}>
         <ScoreAnalysis
+          section="verdict"
           conservative={scoreConservative}
           aggressive={scoreAggressive}
           loading={aiLoading}
           onRetry={loadStockDetail}
+          tab={scoreTab}
+          onTabChange={setScoreTab}
         />
       </View>
 
-      {/* 52주 범위 + 지지/저항 */}
-      {stockData.fiftyTwoWeekHigh > 0 && stockData.fiftyTwoWeekLow > 0 && (() => {
+      {/* 가치·재무지표 (기본정보 그리드 + 재무지표 통합) */}
+      {(() => {
         const cy = stockData.currency === 'KRW' ? '₩' : '$';
-        const range = stockData.fiftyTwoWeekHigh - stockData.fiftyTwoWeekLow;
-        const position = ((stockData.regularMarketPrice - stockData.fiftyTwoWeekLow) / range) * 100;
-        const fromLow = ((stockData.regularMarketPrice - stockData.fiftyTwoWeekLow) / stockData.fiftyTwoWeekLow * 100);
-        const fromHigh = ((stockData.regularMarketPrice - stockData.fiftyTwoWeekHigh) / stockData.fiftyTwoWeekHigh * 100);
-        const posColor = position < 25 ? '#00FF88' : position > 75 ? '#FF4466' : '#FFD700';
+        const roe = (stockData.eps != null && stockData.bps != null && stockData.bps > 0)
+          ? (stockData.eps / stockData.bps * 100).toFixed(1)
+          : null;
+        const fmtVol = stockData.regularMarketVolume
+          ? stockData.regularMarketVolume >= 100000000
+            ? (stockData.regularMarketVolume / 100000000).toFixed(1) + '억'
+            : (stockData.regularMarketVolume / 10000).toFixed(0) + '만'
+          : '-';
+        const fmtCap = stockData.marketCap
+          ? stockData.marketCap >= 1000000000000
+            ? (stockData.marketCap / 1000000000000).toFixed(1) + '조'
+            : (stockData.marketCap / 100000000).toFixed(0) + '억'
+          : '-';
+        const sp = [];
+        if (stockData.per != null) sp.push(`PER ${stockData.per.toFixed(1)}`);
+        if (stockData.pbr != null) sp.push(`PBR ${stockData.pbr.toFixed(1)}`);
+        if (roe != null) sp.push(`ROE ${roe}%`);
+        const items = [
+          { label: '시가', value: `${cy}${stockData.regularMarketOpen?.toLocaleString() || '-'}` },
+          { label: '고가', value: `${cy}${stockData.regularMarketDayHigh?.toLocaleString() || '-'}`, color: '#00FF88' },
+          { label: '저가', value: `${cy}${stockData.regularMarketDayLow?.toLocaleString() || '-'}`, color: '#FF4466' },
+          { label: '거래량', value: fmtVol, tag: isVolumeSpike ? `${volumeRatio.toFixed(1)}x` : null },
+          { label: '시총', value: fmtCap },
+          { label: 'PER', value: stockData.per != null ? `${stockData.per.toFixed(1)}배` : '-' },
+          { label: 'PBR', value: stockData.pbr != null ? `${stockData.pbr.toFixed(1)}배` : '-' },
+          { label: 'EPS', value: stockData.eps != null ? `${cy}${stockData.eps.toLocaleString()}` : '-' },
+          { label: 'BPS', value: stockData.bps != null ? `${cy}${stockData.bps.toLocaleString()}` : '-' },
+          { label: 'ROE', value: roe != null ? `${roe}%` : '-', color: roe != null && parseFloat(roe) >= 15 ? '#00FF88' : roe != null && parseFloat(roe) < 5 ? '#FF4466' : '#C0C8E0' },
+        ];
         return (
-          <View style={styles.rangeCard}>
-            {/* 최저 | 현재위치 | 최고 */}
-            <View style={styles.rangeHeaderRow}>
-              <View>
-                <Text style={styles.cardLabel}>52주 최저</Text>
-                <Text style={[styles.rangePrice, { color: '#FF4466' }]}>{cy}{stockData.fiftyTwoWeekLow?.toLocaleString()}</Text>
-                <Text style={[styles.rangeDelta, { color: '#8892A4' }]}>{fromLow >= 0 ? '+' : ''}{fromLow.toFixed(1)}%</Text>
-              </View>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={[styles.rangePosNum, { color: posColor }]}>{position.toFixed(0)}%</Text>
-                <Text style={[styles.cardLabel, { color: posColor }]}>
-                  {position < 25 ? '저점권' : position > 75 ? '고점권' : '중간권'}
-                </Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.cardLabel}>52주 최고</Text>
-                <Text style={[styles.rangePrice, { color: '#00FF88' }]}>{cy}{stockData.fiftyTwoWeekHigh?.toLocaleString()}</Text>
-                <Text style={[styles.rangeDelta, { color: '#8892A4' }]}>{fromHigh >= 0 ? '+' : ''}{fromHigh.toFixed(1)}%</Text>
-              </View>
-            </View>
-
-            {/* 프로그레스 바 */}
-            <View style={styles.priceRangeBar}>
-              <View style={styles.priceRangeTrack}>
-                <View style={[styles.priceZone, { left: '0%', width: '25%', backgroundColor: '#00FF8820' }]} />
-                <View style={[styles.priceZone, { left: '25%', width: '50%', backgroundColor: '#FFD70010' }]} />
-                <View style={[styles.priceZone, { left: '75%', width: '25%', backgroundColor: '#FF446620' }]} />
-                <View style={[styles.priceRangeIndicator, { left: `${Math.max(2, Math.min(98, position))}%` }]} />
-              </View>
-            </View>
-
-            {/* 지지/저항 (compact) */}
-            {(nearResistances.length > 0 || nearSupports.length > 0) && (
-              <View style={styles.srCompact}>
-                {nearResistances.slice(0, 2).map((r, i) => {
-                  const dist = ((r - currentPrice) / currentPrice * 100).toFixed(1);
-                  return (
-                    <View key={`r${i}`} style={styles.srCompactRow}>
-                      <View style={[styles.srCompactDot, { backgroundColor: '#FF4466' }]} />
-                      <Text style={styles.srCompactPrice}>{cy}{r.toLocaleString()}</Text>
-                      <Text style={[styles.srCompactDist, { color: '#FF4466' }]}>저항 +{dist}%</Text>
-                    </View>
-                  );
-                })}
-                <View style={styles.srCompactCurrent}>
-                  <View style={styles.srCurrentDash} />
-                  <Text style={styles.srCurrentLabel}>현재 {cy}{currentPrice.toLocaleString()}</Text>
-                  <View style={styles.srCurrentDash} />
+          <CollapsibleSection title="가치·재무지표" icon="📊" summary={sp.join(' · ')}>
+            <View style={styles.statsGrid}>
+              {items.map(it => (
+                <View key={it.label} style={styles.statCell}>
+                  <Text style={styles.statLabel}>{it.label}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={[styles.statValue, it.color ? { color: it.color } : null]}>{it.value}</Text>
+                    {it.tag ? <Text style={styles.spikeTag}>{it.tag}</Text> : null}
+                  </View>
                 </View>
-                {nearSupports.slice(0, 2).map((s, i) => {
-                  const dist = ((s - currentPrice) / currentPrice * 100).toFixed(1);
-                  return (
-                    <View key={`s${i}`} style={styles.srCompactRow}>
-                      <View style={[styles.srCompactDot, { backgroundColor: '#00FF88' }]} />
-                      <Text style={styles.srCompactPrice}>{cy}{s.toLocaleString()}</Text>
-                      <Text style={[styles.srCompactDist, { color: '#00FF88' }]}>지지 {dist}%</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
+              ))}
+            </View>
+          </CollapsibleSection>
         );
       })()}
 
-      {/* 퀀트 분석 */}
-      <View style={styles.chartSection}>
-        <QuantAnalysis chartData={quantChartData.length >= 14 ? quantChartData : chartData} />
-      </View>
+      {/* 기술적 분석 (52주 범위·지지저항 + 퀀트 통합) */}
+      {(() => {
+        const cy = stockData.currency === 'KRW' ? '₩' : '$';
+        const has52 = stockData.fiftyTwoWeekHigh > 0 && stockData.fiftyTwoWeekLow > 0;
+        let r52 = null;
+        let summary = '';
+        if (has52) {
+          const range = stockData.fiftyTwoWeekHigh - stockData.fiftyTwoWeekLow;
+          const position = ((stockData.regularMarketPrice - stockData.fiftyTwoWeekLow) / range) * 100;
+          const fromLow = ((stockData.regularMarketPrice - stockData.fiftyTwoWeekLow) / stockData.fiftyTwoWeekLow * 100);
+          const fromHigh = ((stockData.regularMarketPrice - stockData.fiftyTwoWeekHigh) / stockData.fiftyTwoWeekHigh * 100);
+          const posColor = position < 25 ? '#00FF88' : position > 75 ? '#FF4466' : '#FFD700';
+          const posLabel = position < 25 ? '저점권' : position > 75 ? '고점권' : '중간권';
+          r52 = { position, fromLow, fromHigh, posColor, posLabel };
+          summary = `52주 ${position.toFixed(0)}% · ${posLabel}`;
+        }
+        return (
+          <CollapsibleSection title="기술적 분석" icon="📈" summary={summary}>
+            {r52 ? (
+              <View style={[styles.rangeCard, { marginHorizontal: 0, marginVertical: 0, marginBottom: 10 }]}>
+                {/* 최저 | 현재위치 | 최고 */}
+                <View style={styles.rangeHeaderRow}>
+                  <View>
+                    <Text style={styles.cardLabel}>52주 최저</Text>
+                    <Text style={[styles.rangePrice, { color: '#FF4466' }]}>{cy}{stockData.fiftyTwoWeekLow?.toLocaleString()}</Text>
+                    <Text style={[styles.rangeDelta, { color: '#8892A4' }]}>{r52.fromLow >= 0 ? '+' : ''}{r52.fromLow.toFixed(1)}%</Text>
+                  </View>
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={[styles.rangePosNum, { color: r52.posColor }]}>{r52.position.toFixed(0)}%</Text>
+                    <Text style={[styles.cardLabel, { color: r52.posColor }]}>{r52.posLabel}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.cardLabel}>52주 최고</Text>
+                    <Text style={[styles.rangePrice, { color: '#00FF88' }]}>{cy}{stockData.fiftyTwoWeekHigh?.toLocaleString()}</Text>
+                    <Text style={[styles.rangeDelta, { color: '#8892A4' }]}>{r52.fromHigh >= 0 ? '+' : ''}{r52.fromHigh.toFixed(1)}%</Text>
+                  </View>
+                </View>
 
-      {/* 기관 매매 */}
-      <View style={styles.chartSection}>
+                {/* 프로그레스 바 */}
+                <View style={styles.priceRangeBar}>
+                  <View style={styles.priceRangeTrack}>
+                    <View style={[styles.priceZone, { left: '0%', width: '25%', backgroundColor: '#00FF8820' }]} />
+                    <View style={[styles.priceZone, { left: '25%', width: '50%', backgroundColor: '#FFD70010' }]} />
+                    <View style={[styles.priceZone, { left: '75%', width: '25%', backgroundColor: '#FF446620' }]} />
+                    <View style={[styles.priceRangeIndicator, { left: `${Math.max(2, Math.min(98, r52.position))}%` }]} />
+                  </View>
+                </View>
+
+                {/* 지지/저항 (compact) */}
+                {(nearResistances.length > 0 || nearSupports.length > 0) && (
+                  <View style={styles.srCompact}>
+                    {nearResistances.slice(0, 2).map((r, i) => {
+                      const dist = ((r - currentPrice) / currentPrice * 100).toFixed(1);
+                      return (
+                        <View key={`r${i}`} style={styles.srCompactRow}>
+                          <View style={[styles.srCompactDot, { backgroundColor: '#FF4466' }]} />
+                          <Text style={styles.srCompactPrice}>{cy}{r.toLocaleString()}</Text>
+                          <Text style={[styles.srCompactDist, { color: '#FF4466' }]}>저항 +{dist}%</Text>
+                        </View>
+                      );
+                    })}
+                    <View style={styles.srCompactCurrent}>
+                      <View style={styles.srCurrentDash} />
+                      <Text style={styles.srCurrentLabel}>현재 {cy}{currentPrice.toLocaleString()}</Text>
+                      <View style={styles.srCurrentDash} />
+                    </View>
+                    {nearSupports.slice(0, 2).map((s, i) => {
+                      const dist = ((s - currentPrice) / currentPrice * 100).toFixed(1);
+                      return (
+                        <View key={`s${i}`} style={styles.srCompactRow}>
+                          <View style={[styles.srCompactDot, { backgroundColor: '#00FF88' }]} />
+                          <Text style={styles.srCompactPrice}>{cy}{s.toLocaleString()}</Text>
+                          <Text style={[styles.srCompactDist, { color: '#00FF88' }]}>지지 {dist}%</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            ) : null}
+            <QuantAnalysis chartData={quantChartData.length >= 14 ? quantChartData : chartData} />
+          </CollapsibleSection>
+        );
+      })()}
+
+      {/* AI 심층 분석 (점수엔진 상세 카드 — 적정가·사업가치·팩터·리스크 등) */}
+      <CollapsibleSection title="AI 심층 분석" icon="🧠">
+        <ScoreAnalysis
+          section="details"
+          conservative={scoreConservative}
+          aggressive={scoreAggressive}
+          loading={aiLoading}
+          tab={scoreTab}
+          onTabChange={setScoreTab}
+        />
+      </CollapsibleSection>
+
+      {/* 기관·외국인 수급 */}
+      <CollapsibleSection title="기관·외국인 수급" icon="💰">
         <InstitutionalTrade data={institutionalData} />
-      </View>
+      </CollapsibleSection>
 
-      {/* 뉴스 섹션 */}
-      <View style={styles.chartSection}>
+      {/* 뉴스 */}
+      <CollapsibleSection title="뉴스" icon="📰" summary={Array.isArray(newsData) && newsData.length ? `${newsData.length}건` : ''}>
         <NewsList news={newsData} />
-      </View>
+      </CollapsibleSection>
 
-      {/* ETF 정보 */}
-      <View style={styles.chartSection}>
+      {/* ETF 편입 */}
+      <CollapsibleSection title="ETF 편입" icon="🧺" summary={Array.isArray(etfData) && etfData.length ? `${etfData.length}개` : ''}>
         <ETFList etfs={etfData} />
-      </View>
+      </CollapsibleSection>
 
+      <View style={{ height: 12 }} />
     </ScrollView>
 
     {/* 종목 비교 검색 모달 */}
@@ -1553,21 +1546,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-});
-
-const finStyles = StyleSheet.create({
-  grid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8,
-  },
-  cell: {
-    width: '30%', flexGrow: 1,
-    backgroundColor: '#12172E', borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: '#1E2A42',
-    alignItems: 'center',
-  },
-  label: { fontSize: 11, color: '#6B7280', fontWeight: '700', marginBottom: 4 },
-  value: { fontSize: 15, color: '#C0C8E0', fontWeight: '700', marginBottom: 2 },
-  desc: { fontSize: 10, color: '#4A5568', textAlign: 'center' },
 });
 
 const cmpStyles = StyleSheet.create({

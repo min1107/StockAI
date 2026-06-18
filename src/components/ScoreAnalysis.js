@@ -491,47 +491,65 @@ function StrategyCard({ data }) {
 }
 
 // ─── 메인 ────────────────────────────────────────────────────────────────────
-export default function ScoreAnalysis({ conservative, aggressive, loading, onRetry }) {
-  const [tab, setTab] = useState('conservative');
+// section: 'all'(기본·하위호환) | 'verdict'(결론만) | 'details'(심층 카드만)
+// tab/onTabChange: 부모가 결론·심층을 떼어 배치할 때 탭 상태를 공유하기 위함(없으면 내부 state 사용)
+export default function ScoreAnalysis({ conservative, aggressive, loading, onRetry, section = 'all', tab: tabProp, onTabChange }) {
+  const [tabState, setTabState] = useState('conservative');
+  const tab = tabProp ?? tabState;
+  const setTab = onTabChange ?? setTabState;
   const data = tab === 'conservative' ? conservative : aggressive;
   const engine = data?.engine;
 
+  const showVerdict = section === 'all' || section === 'verdict';
+  const showDetails = section === 'all' || section === 'details';
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>AI 종합 판단</Text>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>6팩터 점수 엔진</Text>
-        </View>
-      </View>
-
-      <TabBar selected={tab} onSelect={setTab} />
+      {showVerdict ? (
+        <>
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>AI 종합 판단</Text>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>6팩터 점수 엔진</Text>
+            </View>
+          </View>
+          <TabBar selected={tab} onSelect={setTab} />
+        </>
+      ) : null}
 
       {loading ? (
-        <LoadingView />
+        showVerdict ? <LoadingView /> : null
       ) : !engine ? (
-        <View style={styles.failWrap}>
-          <Text style={styles.failText}>분석을 불러오지 못했습니다</Text>
-          <Text style={styles.failSub}>서버 응답이 지연되었거나 일시적으로 실패했습니다.</Text>
-          {onRetry ? (
-            <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.8}>
-              <Text style={styles.retryBtnText}>다시 시도</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+        showVerdict ? (
+          <View style={styles.failWrap}>
+            <Text style={styles.failText}>분석을 불러오지 못했습니다</Text>
+            <Text style={styles.failSub}>서버 응답이 지연되었거나 일시적으로 실패했습니다.</Text>
+            {onRetry ? (
+              <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.8}>
+                <Text style={styles.retryBtnText}>다시 시도</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null
       ) : (
         <>
-          <VerdictCard engine={engine} interpretation={data.interpretation} />
-          <FairValueCard valuation={engine.valuation} />
-          <UniverseCard universeRank={engine.universeRank} />
-          <BusinessValueCard businessValue={engine.businessValue} crossCheck={engine.crossCheck} insider={engine.insider} />
-          <BullBearCard bullBear={engine.bullBear} />
-          <FactorsCard factors={engine.factors} />
-          <GuardsCard guards={engine.guards} />
-          <InterpretationCard interpretation={data.interpretation} />
-          <CalendarCard calendar={engine.calendar} />
-          <RiskCard risk={engine.risk} />
-          <StrategyCard data={data} />
+          {showVerdict ? (
+            <VerdictCard engine={engine} interpretation={data.interpretation} />
+          ) : null}
+          {showDetails ? (
+            <>
+              <FairValueCard valuation={engine.valuation} />
+              <UniverseCard universeRank={engine.universeRank} />
+              <BusinessValueCard businessValue={engine.businessValue} crossCheck={engine.crossCheck} insider={engine.insider} />
+              <BullBearCard bullBear={engine.bullBear} />
+              <FactorsCard factors={engine.factors} />
+              <GuardsCard guards={engine.guards} />
+              <InterpretationCard interpretation={data.interpretation} />
+              <CalendarCard calendar={engine.calendar} />
+              <RiskCard risk={engine.risk} />
+              <StrategyCard data={data} />
+            </>
+          ) : null}
         </>
       )}
     </View>
