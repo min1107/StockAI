@@ -21,7 +21,6 @@ import { useAuth } from '../context/AuthContext';
 import { addHolding, getHoldings } from '../services/portfolioAPI';
 
 // 컴포넌트
-import AIAnalysis from '../components/AIAnalysis';
 import ScoreAnalysis from '../components/ScoreAnalysis';
 import ETFList from '../components/ETFList';
 import InstitutionalTrade from '../components/InstitutionalTrade';
@@ -30,7 +29,7 @@ import PriceChart from '../components/PriceChart';
 import QuantAnalysis from '../components/QuantAnalysis';
 
 // API
-import { analyzeStockConservative, analyzeStockAggressive, analyzeStockScore } from '../services/groqAPI';
+import { analyzeStockScore } from '../services/groqAPI';
 import * as KISAPI from '../services/kisAPI';
 
 import { LineChart } from 'react-native-chart-kit';
@@ -78,9 +77,7 @@ export default function StockDetailScreen({ route, navigation }) {
   // 퀀트 분석용 별도 차트 데이터 (항상 3개월 일봉)
   const [quantChartData, setQuantChartData] = useState([]);
 
-  // AI 분석 (보수적 + 공격적)
-  const [conservativeAnalysis, setConservativeAnalysis] = useState(null);
-  const [aggressiveAnalysis, setAggressiveAnalysis] = useState(null);
+  // AI 분석 로딩 (점수 엔진)
   const [aiLoading, setAiLoading] = useState(true);
 
   // 점수 엔진 분석 (보수/공격) — docs/AI_ENGINE.md
@@ -230,6 +227,7 @@ export default function StockDetailScreen({ route, navigation }) {
 
   const loadStockDetail = async () => {
   setLoading(true);
+  setAiLoading(true); // 재시도 시에도 AI 카드가 다시 로딩 상태로 돌아가도록
   let data = null;
   try {
     // 1. 가격 데이터만 먼저 → 화면 즉시 표시
@@ -564,50 +562,19 @@ export default function StockDetailScreen({ route, navigation }) {
         newsCount: currentNews.length,
       });
 
-      // 두 가지 분석 + 점수 엔진 분석을 병렬로 실행
-      const [conservative, aggressive, scoreCons, scoreAggr] = await Promise.all([
-        analyzeStockConservative(symbol, stockDataForAI),
-        analyzeStockAggressive(symbol, stockDataForAI),
+      // 점수 엔진 분석(보수/공격)을 병렬로 실행
+      const [scoreCons, scoreAggr] = await Promise.all([
         analyzeStockScore(symbol, stockDataForAI, 'conservative'),
         analyzeStockScore(symbol, stockDataForAI, 'aggressive'),
       ]);
 
-      setConservativeAnalysis(conservative);
-      setAggressiveAnalysis(aggressive);
       setScoreConservative(scoreCons);
       setScoreAggressive(scoreAggr);
       console.log('✅ AI 분석 완료');
-      console.log('  🛡️ 보수적:', conservative.recommendation, `(${conservative.confidence}%)`);
-      console.log('  ⚡ 공격적:', aggressive.recommendation, `(${aggressive.confidence}%)`);
 
     } catch (aiError) {
       console.error('❌ AI 분석 실패:', aiError);
-
-      // 에러 시 폴백 데이터
-      const inst = updatedInstitutionalData.daily || 0;
-      const price = data.regularMarketPrice || 0;
-
-      setConservativeAnalysis({
-        recommendation: inst > 10000 ? '매수' : '관망',
-        confidence: 60,
-        targetPrice: Math.round(price * 1.03),
-        stopLoss: Math.round(price * 0.95),
-        holdingPeriod: '2-3개월',
-        entryStrategy: '2-3회 분할 매수',
-        reasons: ['AI 분석 일시 중단', '기본 지표 기반 평가'],
-        comment: '신중한 접근을 권장합니다',
-      });
-
-      setAggressiveAnalysis({
-        recommendation: inst > 3000 ? '매수' : '관망',
-        confidence: 75,
-        targetPrice: Math.round(price * 1.10),
-        stopLoss: Math.round(price * 0.93),
-        holdingPeriod: '2-4주',
-        entryStrategy: '1회 집중 매수',
-        reasons: ['AI 분석 일시 중단', '기본 지표 기반 평가'],
-        comment: '모멘텀 확인 후 진입 권장',
-      });
+      // 점수엔진 실패 시 ScoreAnalysis가 "다시 시도" UI를 표시하므로 별도 폴백 불필요
 
     } finally {
       setAiLoading(false);
@@ -980,15 +947,7 @@ export default function StockDetailScreen({ route, navigation }) {
           conservative={scoreConservative}
           aggressive={scoreAggressive}
           loading={aiLoading}
-        />
-      </View>
-
-      {/* AI 분석 섹션 (기존 — 비교용) */}
-      <View style={styles.chartSection}>
-        <AIAnalysis
-          conservativeAnalysis={conservativeAnalysis}
-          aggressiveAnalysis={aggressiveAnalysis}
-          loading={aiLoading}
+          onRetry={loadStockDetail}
         />
       </View>
 

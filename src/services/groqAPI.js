@@ -12,6 +12,11 @@ const getServerUrl = () => {
 
 const SERVER = getServerUrl();
 
+// 서버 응답이 없거나 게이트웨이가 연결을 물고 있을 때 무한 로딩을 막는다.
+// (타임아웃 초과 시 axios가 reject → 각 함수의 catch가 폴백/null 반환 → Promise.all 정상 종료 → aiLoading 해제)
+const ANALYZE_TIMEOUT = 45000;   // 일반 AI 분석
+const SCORE_TIMEOUT = 60000;     // 점수엔진(DART·내부자·백테스트 포함, 무거움)
+
 /**
  * 보수적 AI 분석 (가치투자)
  */
@@ -19,7 +24,7 @@ export const analyzeStockConservative = async (symbol, stockData) => {
   try {
     console.log('🛡️ 보수적 분석 시작:', symbol);
 
-    const response = await axios.post(`${SERVER}/api/ai/analyze?type=conservative`, stockData);
+    const response = await axios.post(`${SERVER}/api/ai/analyze?type=conservative`, stockData, { timeout: ANALYZE_TIMEOUT });
     const result = response.data;
 
     console.log('✅ 보수적 분석 성공:', result.recommendation);
@@ -37,7 +42,7 @@ export const analyzeStockAggressive = async (symbol, stockData) => {
   try {
     console.log('⚡ 공격적 분석 시작:', symbol);
 
-    const response = await axios.post(`${SERVER}/api/ai/analyze?type=aggressive`, stockData);
+    const response = await axios.post(`${SERVER}/api/ai/analyze?type=aggressive`, stockData, { timeout: ANALYZE_TIMEOUT });
     const result = response.data;
 
     console.log('✅ 공격적 분석 성공:', result.recommendation);
@@ -57,7 +62,7 @@ export const analyzeStockAggressive = async (symbol, stockData) => {
 export const analyzeStockScore = async (symbol, stockData, mode = 'conservative') => {
   try {
     console.log(`🧠 점수엔진 분석 시작 (${mode}):`, symbol);
-    const response = await axios.post(`${SERVER}/api/ai/score?type=${mode}`, stockData);
+    const response = await axios.post(`${SERVER}/api/ai/score?type=${mode}`, stockData, { timeout: SCORE_TIMEOUT });
     console.log('✅ 점수엔진 분석 성공:', response.data?.engine?.recommendation, `${response.data?.engine?.confidence}%`);
     return response.data;
   } catch (error) {

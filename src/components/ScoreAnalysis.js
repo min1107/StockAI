@@ -491,7 +491,7 @@ function StrategyCard({ data }) {
 }
 
 // ─── 메인 ────────────────────────────────────────────────────────────────────
-export default function ScoreAnalysis({ conservative, aggressive, loading }) {
+export default function ScoreAnalysis({ conservative, aggressive, loading, onRetry }) {
   const [tab, setTab] = useState('conservative');
   const data = tab === 'conservative' ? conservative : aggressive;
   const engine = data?.engine;
@@ -510,8 +510,14 @@ export default function ScoreAnalysis({ conservative, aggressive, loading }) {
       {loading ? (
         <LoadingView />
       ) : !engine ? (
-        <View style={styles.loadingWrap}>
-          <Text style={styles.loadingText}>분석 데이터를 불러오는 중입니다...</Text>
+        <View style={styles.failWrap}>
+          <Text style={styles.failText}>분석을 불러오지 못했습니다</Text>
+          <Text style={styles.failSub}>서버 응답이 지연되었거나 일시적으로 실패했습니다.</Text>
+          {onRetry ? (
+            <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.8}>
+              <Text style={styles.retryBtnText}>다시 시도</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : (
         <>
@@ -563,6 +569,16 @@ const styles = StyleSheet.create({
     paddingVertical: 28, gap: 10,
   },
   loadingText: { color: '#6B7280', fontSize: 13 },
+
+  // 분석 실패 상태 (무한 로딩으로 위장되던 자리)
+  failWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 28, gap: 6 },
+  failText: { color: '#C0C8E0', fontSize: 14, fontWeight: '700' },
+  failSub: { color: '#6B7280', fontSize: 12, textAlign: 'center' },
+  retryBtn: {
+    marginTop: 10, backgroundColor: '#9D4EDD', paddingHorizontal: 22, paddingVertical: 9,
+    borderRadius: 10,
+  },
+  retryBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
 
   // 카드 공통
   card: {
