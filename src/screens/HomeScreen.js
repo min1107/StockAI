@@ -696,7 +696,11 @@ export default function HomeScreen({ navigation }) {
               contentContainerStyle={styles.aiCarousel}
             >
               {aiRecommendations.map((item, index) => {
-                const symbol = item.code ? `${item.code}.${item.market}` : item.symbol;
+                // 서버가 올바른 형식(예: '079810.KQ')으로 주는 symbol을 우선 사용.
+                // item.market은 'KOSDAQ'/'KOSPI' 라벨이라 그대로 붙이면 '.KOSDAQ'가 되어
+                // fetchStockDetail이 한국주식으로 인식 못 하고 무한로딩됨 → 폴백 시 KS/KQ로 매핑.
+                const symbol = item.symbol
+                  || (item.code ? `${item.code}.${item.market === 'KOSDAQ' || item.market === 'KQ' ? 'KQ' : 'KS'}` : null);
                 return (
                   <AIPickCard
                     key={item.code || item.symbol}
