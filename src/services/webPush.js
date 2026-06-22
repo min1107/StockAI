@@ -70,6 +70,58 @@ export function injectPWAMeta() {
   }
 }
 
+// ── PWA 설치 프롬프트 (Android Chrome) ──────────────────────────────
+// beforeinstallprompt는 페이지 로드 직후 1회 발생하므로 앱 시작 시 미리 잡아둔다.
+// iOS Safari에는 이 이벤트가 없어 promptInstall이 'unavailable'을 반환 → iOS 흐름 영향 없음.
+let deferredInstallPrompt = null;
+let installStateListeners = [];
+
+function notifyInstallListeners() {
+  for (const fn of installStateListeners) { try { fn(); } catch {} }
+}
+
+// 앱 시작 시 1회 호출 (App.js). 설치 프롬프트 이벤트를 가로채 보관.
+export function initInstallPrompt() {
+  if (!isWeb()) return;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); // 브라우저 기본 미니 배너 억제 → 앱 내 버튼으로 유도
+    deferredInstallPrompt = e;
+    notifyInstallListeners();
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    notifyInstallListeners();
+  });
+}
+
+// 설치 프롬프트가 잡혀 있는지 (안드 Chrome에서 설치 가능 상태)
+export function canInstallApp() {
+  return !!deferredInstallPrompt;
+}
+
+// 이미 홈 화면 PWA로 실행 중인지
+export function isAppInstalled() {
+  if (!isWeb()) return false;
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    || window.navigator.standalone === true;
+}
+
+// 설치 상태 변화 구독 (UI 갱신용). 해제 함수 반환.
+export function onInstallStateChange(fn) {
+  installStateListeners.push(fn);
+  return () => { installStateListeners = installStateListeners.filter(f => f !== fn); };
+}
+
+// 사용자 탭 제스처 안에서 호출 → 네이티브 설치 프롬프트 표시
+export async function promptInstall() {
+  if (!deferredInstallPrompt) return 'unavailable';
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  notifyInstallListeners();
+  return outcome; // 'accepted' | 'dismissed'
+}
+
 export async function registerServiceWorker() {
   if (!isWebPushSupported()) return null;
   try {

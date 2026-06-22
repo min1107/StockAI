@@ -112,6 +112,9 @@ export default function StockDetailScreen({ route, navigation }) {
   const { user } = useAuth();
 
   const FAVORITES_KEY = '@StockAI:favorites';
+  // #2 점수엔진 결과 캐시 (재방문 즉시 표시) — 데이터는 동일, 재계산만 생략
+  const SCORE_CACHE_TTL = 10 * 60 * 1000; // 10분
+  const scoreCacheKey = (sym) => `@StockAI:scoreCache:${sym}`;
 
   const searchCompareStocks = async (q) => {
     if (!q || q.trim().length < 1) { setCompareResults([]); return; }
@@ -245,36 +248,68 @@ export default function StockDetailScreen({ route, navigation }) {
   }
   setLoading(false); // 가격 나오면 바로 화면 표시
 
-  // 이후 데이터는 병렬로 백그라운드 로딩
-  let chart = [];
-  try {
-    // 2. 차트 데이터
-    console.log('📈 차트 데이터 로드:', selectedPeriod);
-    chart = await fetchChartData(symbol, selectedPeriod, getInterval(selectedPeriod));
-    console.log('✅ 차트 데이터 개수:', chart.length);
-    setIsIntradayFallback(selectedPeriod === '1d' && chart.length > 0 && chart[0].isIntradayFallback === true);
-    setChartData(chart);
-  } catch (chartError) {
-    console.error('❌ 차트 실패:', chartError);
-  }
+  // #4 워밍업: 같은 Vercel 배포 인스턴스를 미리 깨워 점수엔진 콜드스타트 단축 (fire-and-forget)
+  KISAPI.warmupKISToken().catch(() => {});
 
-  // 2-1. 퀀트 차트 + 기관매매 + 뉴스 + ETF 병렬 실행
+  // #2 캐시: 최근(10분 내) 분석 결과가 있으면 즉시 표시 → 재방문 즉시화
+  let scoreFromCache = false;
+  try {
+    const raw = await AsyncStorage.getItem(scoreCacheKey(symbol));
+    if (raw) {
+      const cached = JSON.parse(raw);
+      if (cached && (Date.now() - cached.ts) < SCORE_CACHE_TTL) {
+        if (cached.scoreCons) setScoreConservative(cached.scoreCons);
+        if (cached.scoreAggr) setScoreAggressive(cached.scoreAggr);
+        setAiLoading(false);
+        scoreFromCache = true;
+        console.log('⚡ 점수엔진 캐시 사용 (재계산 생략)');
+      }
+    }
+  } catch {}
+
   const isKorean = symbol.includes('.KS') || symbol.includes('.KQ');
   const stockCode = symbol.split('.')[0];
 
-  // 3mo 차트: 이미 로드된 데이터 재사용 (중복 API 호출 방지)
-  const quantChartPromise = (selectedPeriod === '3mo' && chart.length > 0)
-    ? Promise.resolve(chart).then(q => { setQuantChartData(q); return q; })
+  // #1 병렬화: 화면/AI에 필요한 독립 데이터를 한 번에 동시 발사 (계단식 await 제거)
+  // 차트 (선택 기간)
+  const chartPromise = fetchChartData(symbol, selectedPeriod, getInterval(selectedPeriod))
+    .then(c => {
+      console.log('✅ 차트 데이터 개수:', c.length);
+      setIsIntradayFallback(selectedPeriod === '1d' && c.length > 0 && c[0].isIntradayFallback === true);
+      setChartData(c);
+      return c;
+    })
+    .catch(chartError => { console.error('❌ 차트 실패:', chartError); return []; });
+
+  // 퀀트 차트(3개월 일봉): 선택 기간이 3mo면 위 차트 재사용, 아니면 별도 조회
+  const quantChartPromise = (selectedPeriod === '3mo')
+    ? chartPromise.then(q => { setQuantChartData(q); return q; })
     : fetchChartData(symbol, '3mo', '1d').then(q => { setQuantChartData(q); return q; }).catch(() => { setQuantChartData([]); return []; });
 
-  const [quantChart, kisResult, newsResult, etfResult] = await Promise.allSettled([
+  // 차트·퀀트·기관매매·뉴스·ETF·재무·DART(3종)·보유조회를 전부 동시에
+  const [
+    chartR, quantChart, kisResult, newsResult, etfResult,
+    finR, dpR, dbR, diR, holdR,
+  ] = await Promise.allSettled([
+    chartPromise,
     quantChartPromise,
     isKorean ? KISAPI.getKISInvestorTrend(stockCode) : Promise.resolve(null),
     fetchStockNews(symbol, name),
     isKorean ? fetchETFInfo(symbol) : Promise.resolve([]),
+    KISAPI.getKISFinancials(symbol),
+    KISAPI.getDartProfile(symbol),
+    KISAPI.getDartBusiness(symbol),
+    KISAPI.getDartInsider(symbol),
+    user ? getHoldings(user.id) : Promise.resolve(null),
   ]);
 
+  const chart = chartR.status === 'fulfilled' ? chartR.value : [];
   const resolvedQuantChart = quantChart.status === 'fulfilled' ? quantChart.value : [];
+  // 재무/DART — 점수엔진 품질/성장 팩터 + 정성평가 근거. 실패해도 null.
+  const financials = finR.status === 'fulfilled' ? finR.value : null;
+  const dartProfile = dpR.status === 'fulfilled' ? dpR.value : null;
+  const dartBusiness = dbR.status === 'fulfilled' ? dbR.value : null;
+  const dartInsider = diR.status === 'fulfilled' ? diR.value : null;
 
     // 3. 기관 매매 결과 처리
     let updatedInstitutionalData = {
@@ -335,8 +370,8 @@ export default function StockDetailScreen({ route, navigation }) {
       setEtfData([]);
     }
 
-    // 6. Groq AI 2-tier 분석 (보수적 + 공격적)
-    try {
+    // 6. 점수 엔진 분석 — 캐시가 없을 때만 재계산 (#2)
+    if (!scoreFromCache) try {
       console.log('🤖 AI 분석 시작 (보수적 + 공격적):', symbol);
       console.log('📊 전달할 기관 매매:', updatedInstitutionalData);
 
@@ -473,43 +508,26 @@ export default function StockDetailScreen({ route, navigation }) {
         else rsiStatus = '중립';
       }
 
-      // 포트폴리오 보유 여부 확인
+      // 포트폴리오 보유 여부 확인 (#1 배치에서 미리 조회됨)
       let holdingInfo = null;
-      if (user) {
-        try {
-          const holdings = await getHoldings(user.id);
-          const stockCode = symbol.split('.')[0];
-          const found = holdings.find(h => h.stock_code === stockCode);
-          if (found) {
-            const pnl = (data.regularMarketPrice - found.avg_price) * found.shares;
-            const pnlRate = ((data.regularMarketPrice - found.avg_price) / found.avg_price * 100);
-            holdingInfo = {
-              shares: found.shares,
-              avgPrice: found.avg_price,
-              totalCost: found.avg_price * found.shares,
-              totalValue: data.regularMarketPrice * found.shares,
-              pnl: Math.round(pnl),
-              pnlRate: pnlRate.toFixed(2),
-            };
-            setUserHolding(holdingInfo);
-          }
-        } catch (e) {
-          console.error('포트폴리오 조회 실패:', e);
+      if (user && holdR.status === 'fulfilled' && Array.isArray(holdR.value)) {
+        const found = holdR.value.find(h => h.stock_code === stockCode);
+        if (found) {
+          const pnl = (data.regularMarketPrice - found.avg_price) * found.shares;
+          const pnlRate = ((data.regularMarketPrice - found.avg_price) / found.avg_price * 100);
+          holdingInfo = {
+            shares: found.shares,
+            avgPrice: found.avg_price,
+            totalCost: found.avg_price * found.shares,
+            totalValue: data.regularMarketPrice * found.shares,
+            pnl: Math.round(pnl),
+            pnlRate: pnlRate.toFixed(2),
+          };
+          setUserHolding(holdingInfo);
         }
       }
 
-      // 🆕 재무비율 + DART 프로필/사업보고서 — 점수엔진 품질/성장 팩터 + 정성평가 근거. 국내주식만, 실패해도 null.
-      let financials = null, dartProfile = null, dartBusiness = null, dartInsider = null;
-      try {
-        [financials, dartProfile, dartBusiness, dartInsider] = await Promise.all([
-          KISAPI.getKISFinancials(symbol),
-          KISAPI.getDartProfile(symbol),
-          KISAPI.getDartBusiness(symbol),
-          KISAPI.getDartInsider(symbol),
-        ]);
-      } catch (e) {
-        console.warn('재무/DART 조회 생략:', e.message);
-      }
+      // 재무/DART는 #1 배치에서 이미 조회됨 (financials/dartProfile/dartBusiness/dartInsider)
 
       const stockDataForAI = {
         name: name,
@@ -565,15 +583,21 @@ export default function StockDetailScreen({ route, navigation }) {
         newsCount: currentNews.length,
       });
 
-      // 점수 엔진 분석(보수/공격)을 병렬로 실행
-      const [scoreCons, scoreAggr] = await Promise.all([
-        analyzeStockScore(symbol, stockDataForAI, 'conservative'),
-        analyzeStockScore(symbol, stockDataForAI, 'aggressive'),
-      ]);
-
-      setScoreConservative(scoreCons);
-      setScoreAggressive(scoreAggr);
+      // 점수 엔진 분석(보수/공격) 병렬 실행 — #3 먼저 끝난 관점부터 즉시 표시
+      const consPromise = analyzeStockScore(symbol, stockDataForAI, 'conservative')
+        .then(r => { setScoreConservative(r); setAiLoading(false); return r; });
+      const aggrPromise = analyzeStockScore(symbol, stockDataForAI, 'aggressive')
+        .then(r => { setScoreAggressive(r); return r; });
+      const [scoreCons, scoreAggr] = await Promise.all([consPromise, aggrPromise]);
       console.log('✅ AI 분석 완료');
+
+      // #2 캐시 저장 (둘 중 하나라도 성공 시 재방문 즉시 표시)
+      if (scoreCons || scoreAggr) {
+        AsyncStorage.setItem(
+          scoreCacheKey(symbol),
+          JSON.stringify({ ts: Date.now(), scoreCons, scoreAggr })
+        ).catch(() => {});
+      }
 
     } catch (aiError) {
       console.error('❌ AI 분석 실패:', aiError);

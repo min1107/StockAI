@@ -8,7 +8,7 @@ import { ActivityIndicator, Alert, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/context/AuthContext';
 import { setupNotifHandler } from './src/services/notificationService';
-import { injectPWAMeta, registerServiceWorker } from './src/services/webPush';
+import { injectPWAMeta, registerServiceWorker, initInstallPrompt } from './src/services/webPush';
 
 // react-native-web의 Alert.alert는 no-op(아무것도 안 함) → 웹에서 브라우저 대화상자로 대체.
 // 이걸로 앱 전체의 성공/실패 배너 + 삭제 확인창(onPress 콜백)이 웹에서도 동작함.
@@ -125,6 +125,7 @@ export default function App() {
     // 웹(PWA): manifest/Apple 메타 주입 + 서비스워커 등록
     injectPWAMeta();
     registerServiceWorker();
+    initInstallPrompt(); // 안드로이드 설치 프롬프트 가로채기
   }, []);
 
   // 로딩 중 스플래시

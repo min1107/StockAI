@@ -6,6 +6,7 @@
  */
 
 const TTL_MS = 24 * 60 * 60 * 1000;
+const LASTGOOD_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 마지막 정상 스크리닝은 7일 보존
 
 const memCache = new Map();
 
@@ -21,19 +22,25 @@ try {
 } catch (_) {}
 
 const SCREEN_KEY = 'stockai:screen:candidates';
+const SCREEN_LASTGOOD_KEY = 'stockai:screen:candidates:lastgood';
 const SCREEN_TTL_SEC = 24 * 60 * 60;
+const LASTGOOD_TTL_SEC = 7 * 24 * 60 * 60;
 
+// 검증을 통과한 결과만 저장된다(screen.js가 게이트). 현재값 + 마지막 정상값 둘 다 기록.
 async function setScreenCandidates(data) {
   const payload = { ...data, screenedAt: new Date().toISOString() };
   memCache.set(SCREEN_KEY, { value: payload, expiry: Date.now() + TTL_MS });
+  memCache.set(SCREEN_LASTGOOD_KEY, { value: payload, expiry: Date.now() + LASTGOOD_TTL_MS });
   if (redis) {
     try {
       await redis.set(SCREEN_KEY, JSON.stringify(payload), { ex: SCREEN_TTL_SEC });
+      await redis.set(SCREEN_LASTGOOD_KEY, JSON.stringify(payload), { ex: LASTGOOD_TTL_SEC });
     } catch (_) {}
   }
 }
 
 async function getScreenCandidates() {
+  // 1) 현재값 (24h)
   if (redis) {
     try {
       const cached = await redis.get(SCREEN_KEY);
@@ -42,7 +49,18 @@ async function getScreenCandidates() {
   }
   const item = memCache.get(SCREEN_KEY);
   if (item && Date.now() < item.expiry) return item.value;
-  // 정적 파일 폴백 (로컬에서 buildScreenDB.js로 생성)
+
+  // 2) 마지막 정상값 (7d) — 크롤링 실패/검증 미통과로 현재값이 비어도 발굴 종목 유지
+  if (redis) {
+    try {
+      const lg = await redis.get(SCREEN_LASTGOOD_KEY);
+      if (lg) return typeof lg === 'string' ? JSON.parse(lg) : lg;
+    } catch (_) {}
+  }
+  const lgItem = memCache.get(SCREEN_LASTGOOD_KEY);
+  if (lgItem && Date.now() < lgItem.expiry) return lgItem.value;
+
+  // 3) 정적 파일 폴백 (로컬에서 buildScreenDB.js로 생성)
   try {
     return require('../data/screenCandidates.json');
   } catch (_) {}

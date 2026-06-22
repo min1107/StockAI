@@ -149,7 +149,8 @@ async function fetchPrice(stock) {
     fiftyTwoWeekHigh: parseInt(o.w52_hgpr) || 0,
     fiftyTwoWeekLow:  parseInt(o.w52_lwpr) || 0,
     per: parseFloat(o.per) || null,
-    pbr: parseFloat(o.pbr) || null,
+    pbr: parseFloat(o.pbr) || null,           // KIS 실측 PBR (네이버엔 없음)
+    dividendYield: parseFloat(o.dvyd) || 0,   // KIS 배당수익률 — 같은 호출에 포함
   };
 }
 
@@ -165,6 +166,34 @@ async function fetchAllPrices(stocks) {
     }
   }
   return results;
+}
+
+// 복합 점수 랭킹 — PER(가치)·PBR(가치)·ROE(수익성)·배당수익률(환원) 멀티팩터.
+// 절대 임계값이 아니라 후보군 내부 순위로 정규화(0~1). 값 없으면 중립 0.5.
+function rankByComposite(list) {
+  const pct = (key, higherIsBetter) => {
+    const vals = list.map(s => s[key]).filter(v => typeof v === 'number' && isFinite(v));
+    if (vals.length === 0) return () => 0.5;
+    const sorted = [...vals].sort((a, b) => a - b);
+    return (v) => {
+      if (typeof v !== 'number' || !isFinite(v)) return 0.5;
+      // v 이하 개수 비율 = 백분위(낮을수록 0). 낮은 게 좋으면 반전.
+      let rank = sorted.filter(x => x <= v).length / sorted.length;
+      return higherIsBetter ? rank : 1 - rank;
+    };
+  };
+  const perPct = pct('per', false);   // 낮을수록 좋음
+  const pbrPct = pct('pbr', false);   // 낮을수록 좋음
+  const roePct = pct('roe', true);    // 높을수록 좋음
+  const divPct = pct('dividendYield', true); // 높을수록 좋음
+
+  return list
+    .map(s => ({
+      ...s,
+      _score: 0.30 * perPct(s.per) + 0.20 * pbrPct(s.pbr)
+            + 0.35 * roePct(s.roe) + 0.15 * divPct(s.dividendYield),
+    }))
+    .sort((a, b) => b._score - a._score);
 }
 
 module.exports = async (req, res) => {
@@ -186,9 +215,15 @@ module.exports = async (req, res) => {
     let candidates;
     const screenCache = await getScreenCandidates();
     if (screenCache && screenCache.candidates && screenCache.candidates.length >= 5) {
-      // KRX 전체 스크리닝 결과 사용
-      candidates = screenCache.candidates.slice(0, 20);
-      console.log(`📋 스크리닝 캐시 사용: ${candidates.length}개 후보 (전체 ${screenCache.universeSize}개 중 ${screenCache.totalScanned}개 스캔)`);
+      // KRX 스크리닝 프리리스트(저PER·고ROE, 최대 60개) → KIS로 PBR·배당·실시간 시세 보강
+      const prelist = screenCache.candidates.slice(0, 60);
+      console.log(`📋 스크리닝 프리리스트 ${prelist.length}개 KIS 보강 중... (전체 ${screenCache.universeSize}개 중 ${screenCache.totalScanned}개 스캔)`);
+      const enriched = await fetchAllPrices(prelist);
+      // KIS 보강 실패 시 네이버 원본으로라도 진행
+      const base = enriched.length >= 5 ? enriched : prelist;
+      // 멀티팩터 복합점수 상위 20개만 AI에 투입 (PBR·배당이 선별에 실제 반영됨)
+      candidates = rankByComposite(base).slice(0, 20);
+      console.log(`🧮 복합점수 선별: ${base.length}개 → 상위 ${candidates.length}개`);
     } else {
       // 캐시 없으면 기존 70개 풀 폴백
       console.log('⚠️ 스크리닝 캐시 없음 → 기존 풀 폴백');
@@ -205,8 +240,8 @@ module.exports = async (req, res) => {
       let filtered = applyFilter(2.0, 35, 0.82);
       if (filtered.length < 8) filtered = applyFilter(2.5, 40, 0.88);
       if (filtered.length < 8) filtered = applyFilter(3.5, 55, 0.95);
-      filtered.sort((a, b) => a.pbr - b.pbr);
-      candidates = filtered.slice(0, 20);
+      // 폴백도 동일한 복합점수로 랭킹 (ROE는 없을 수 있어 중립 처리됨)
+      candidates = rankByComposite(filtered).slice(0, 20);
     }
 
     if (candidates.length < 3) {
@@ -234,9 +269,11 @@ module.exports = async (req, res) => {
         `- ${s.name}(${s.code})`,
         s.sector ? `[${s.sector}]` : `[${s.market || 'KR'}]`,
         `: 현재가 ${s.currentPrice?.toLocaleString()}원`,
-        `/ PBR ${s.pbr}`,
         `/ PER ${s.per}`,
       ];
+      if (s.roe != null && s.roe !== 0) parts.push(`/ ROE ${s.roe}%`);
+      if (s.pbr != null) parts.push(`/ PBR ${s.pbr}`);
+      if (s.dividendYield > 0) parts.push(`/ 배당 ${s.dividendYield}%`);
       if (s.fiftyTwoWeekHigh > 0) {
         parts.push(`/ 52주고점대비 ${((s.currentPrice / s.fiftyTwoWeekHigh) * 100).toFixed(0)}%`);
       }
@@ -256,8 +293,8 @@ module.exports = async (req, res) => {
 규칙:
 1. 시장이 아직 주목하지 않은 중소형 강소기업을 우선 발굴하라. 대형주는 저평가 근거가 압도적으로 명확할 때만 선정하라.
 2. 현재 거시경제(환율, 유가, 미국 선물)가 어떤 종목에 유리하게 작용하는지 구체적으로 연결하라.
-3. 각 종목의 저평가 근거를 PBR/PER 수치로 수치화하라. 52주 데이터 없으면 PBR/PER만으로 충분히 설명하라.
-4. "잘 알려진 기업이라서", "안정적이라서" 같은 막연한 이유는 금지. 발굴 가치와 재평가 시나리오를 제시하라.
+3. 각 종목을 "저평가(PER/PBR) + 수익성(ROE) + 주주환원(배당수익률)"의 3축으로 교차 분석하라. 싸기만 한 게 아니라 ROE로 수익성이 뒷받침되는지, 배당으로 환원이 되는지 함께 근거에 녹여라. 수치를 반드시 인용하라.
+4. "잘 알려진 기업이라서", "안정적이라서" 같은 막연한 이유는 금지. 발굴 가치와 재평가 시나리오를 제시하라. 고배당이 주가 급락에 따른 착시(배당함정)는 아닌지도 짚어라.
 5. 출력 텍스트 말투: 증권사 리포트 스타일의 정중한 존댓말(~입니다, ~습니다, ~됩니다). 반말·명령형·축약형 절대 금지.
 6. 반드시 한글만. JSON 외 텍스트 금지.`,
         },
@@ -297,12 +334,23 @@ JSON:
       const extras = candidates
         .filter(c => !usedCodes.has(c.code))
         .slice(0, 5 - recommendations.length)
-        .map(c => ({
-          ...c,
-          reason: `PBR ${c.pbr} / PER ${c.per}로 동종업종 대비 저평가. 52주 고점 대비 ${((1 - c.currentPrice / c.fiftyTwoWeekHigh) * 100).toFixed(0)}% 하락 구간으로 반등 여력 존재. 섹터 성장성과 수급 개선 시 재평가 가능.`,
-          riskLevel: '보통',
-          targetPeriod: '중기(3-6개월)',
-        }));
+        .map(c => {
+          const valParts = [];
+          if (c.per) valParts.push(`PER ${c.per}`);
+          if (c.pbr) valParts.push(`PBR ${c.pbr}`);
+          if (c.roe) valParts.push(`ROE ${c.roe}%`);
+          if (c.dividendYield > 0) valParts.push(`배당 ${c.dividendYield}%`);
+          const valText = valParts.length ? valParts.join(' / ') : '저평가 지표';
+          const dropText = (c.fiftyTwoWeekHigh > 0)
+            ? ` 52주 고점 대비 ${((1 - c.currentPrice / c.fiftyTwoWeekHigh) * 100).toFixed(0)}% 하락 구간으로 반등 여력이 있습니다.`
+            : '';
+          return {
+            ...c,
+            reason: `${valText} 기준 동종업종 대비 저평가 구간으로 판단됩니다.${dropText} 수익성(ROE)과 수급 개선 시 재평가가 기대됩니다.`,
+            riskLevel: '보통',
+            targetPeriod: '중기(3-6개월)',
+          };
+        });
       recommendations = [...recommendations, ...extras];
     }
 

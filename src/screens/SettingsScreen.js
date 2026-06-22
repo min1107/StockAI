@@ -23,6 +23,10 @@ import {
   getNotificationPermission,
   enableWebPush,
   sendTestPush,
+  canInstallApp,
+  isAppInstalled,
+  onInstallStateChange,
+  promptInstall,
 } from '../services/webPush';
 
 const APP_VERSION = '1.0.0';
@@ -117,12 +121,26 @@ export default function SettingsScreen({ navigation }) {
   const [pushSupported, setPushSupported] = useState(false);
   const [pushPerm, setPushPerm] = useState('default'); // 'default'|'granted'|'denied'|'unsupported'
   const [pushBusy, setPushBusy] = useState(false);
+  const [canInstall, setCanInstall] = useState(false);
 
   useEffect(() => {
     loadNotifSettings().then(s => setNotif(s));
     setPushSupported(isWebPushSupported());
     setPushPerm(getNotificationPermission());
+    // 안드로이드: 설치 프롬프트가 잡혔고 아직 미설치일 때만 설치 버튼 노출
+    const refreshInstall = () => setCanInstall(canInstallApp() && !isAppInstalled());
+    refreshInstall();
+    const unsub = onInstallStateChange(refreshInstall);
+    return unsub;
   }, []);
+
+  const handleInstall = async () => {
+    const outcome = await promptInstall();
+    if (outcome === 'accepted') {
+      Alert.alert('설치 완료', '홈 화면에 StockAI가 추가되었습니다.');
+    }
+    setCanInstall(canInstallApp() && !isAppInstalled());
+  };
 
   const handleEnableWebPush = async () => {
     setPushBusy(true);
@@ -213,6 +231,21 @@ export default function SettingsScreen({ navigation }) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
+
+        {/* ── 홈 화면에 추가 (안드로이드 Chrome에서만 노출) ── */}
+        {canInstall && (
+          <>
+            <SectionHeader title="앱 설치" desc="홈 화면에 추가하면 앱처럼 전체 화면으로 실행됩니다" />
+            <View style={styles.card}>
+              <Row
+                icon="📲"
+                label="홈 화면에 추가"
+                sublabel="탭하면 설치 안내가 표시됩니다"
+                onPress={handleInstall}
+              />
+            </View>
+          </>
+        )}
 
         {/* ── 계정 ── */}
         <SectionHeader title="계정" />
