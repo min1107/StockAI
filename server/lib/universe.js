@@ -40,9 +40,19 @@ function rankStock(stock = {}, dist) {
     const pct = percentileOf(dist.per.bp, stock.per);
     if (pct !== null) { out.perPercentile = pct; out.items.push({ metric: 'PER', percentile: pct, label: valueLabel('PER', pct) }); }
   }
-  if (dist.pbr && typeof stock.pbr === 'number' && stock.pbr > 0) {
-    const pct = percentileOf(dist.pbr.bp, stock.pbr);
-    if (pct !== null) { out.pbrPercentile = pct; out.items.push({ metric: 'PBR', percentile: pct, label: valueLabel('PBR', pct) }); }
+  // 품질: ROE 클수록 우수. pct=값보다 ROE 낮은 종목 비율 → 크면 상위 수익성.
+  //   (전종목 스캔엔 PBR이 없어 PBR 분포는 비어있음 → ROE 백분위로 품질 축 제공)
+  if (dist.roe && typeof stock.roe === 'number' && stock.roe > 0) {
+    const pct = percentileOf(dist.roe.bp, stock.roe);
+    if (pct !== null) {
+      out.roePercentile = pct;
+      const top = 100 - pct;
+      out.items.push({
+        metric: 'ROE',
+        percentile: pct,
+        label: top <= 50 ? `ROE 시장 상위 ${clamp1(top)}% (수익성 우수)` : `ROE 시장 하위 ${clamp1(pct)}% (수익성 낮음)`,
+      });
+    }
   }
   // 규모: 시총 클수록 대형. top = 상위 몇 %.
   if (dist.marketCap && typeof stock.marketCap === 'number' && stock.marketCap > 0) {

@@ -22,6 +22,15 @@ function AIPickCard({ item, index, onPress }) {
   const priceColor = isPositive ? '#00FF88' : '#FF4466';
   const riskColor = item.riskLevel === '낮음' ? '#00D97E' : item.riskLevel === '높음' ? '#FF4466' : '#FFB800';
 
+  // 발굴점수 + AI추천 (종목상세와 동일 척도·용어로 통일된 값)
+  const score = typeof item.score === 'number' ? item.score : null;
+  const rec = item.recommendation;
+  const recColor = rec === '매수' || rec === '추가매수' ? '#00FF88'
+    : rec === '관심' ? '#00D9FF'
+    : '#8A9BAE';
+  const valueF = item.factors?.find(f => f.key === 'value' && f.available);
+  const qualityF = item.factors?.find(f => f.key === 'quality' && f.available);
+
   // 보조지표 한 줄: 섹터 · PBR · PER (알약 여러 개 대신 압축)
   const metaParts = [];
   if (item.sector) metaParts.push(item.sector);
@@ -50,6 +59,30 @@ function AIPickCard({ item, index, onPress }) {
       {/* 보조지표 한 줄 */}
       {metaParts.length > 0 && (
         <Text style={aiStyles.metaLine} numberOfLines={1}>{metaParts.join('   ·   ')}</Text>
+      )}
+
+      {/* 발굴점수 + AI추천 + 밸류/품질 라벨 (종목상세와 동일 기준) */}
+      {(score != null || valueF || qualityF) && (
+        <View style={aiStyles.factorRow}>
+          {score != null && (
+            <View style={[aiStyles.recPill, { borderColor: recColor + '55', backgroundColor: recColor + '18' }]}>
+              <Text style={[aiStyles.recPillText, { color: recColor }]}>AI {rec} {score >= 0 ? '+' : ''}{score}</Text>
+            </View>
+          )}
+          {valueF && (
+            <View style={aiStyles.factorPill}><Text style={aiStyles.factorPillText}>{valueF.label}</Text></View>
+          )}
+          {qualityF && (
+            <View style={aiStyles.factorPill}><Text style={aiStyles.factorPillText}>{qualityF.label}</Text></View>
+          )}
+        </View>
+      )}
+
+      {/* 밸류트랩 경고 */}
+      {item.valueTrap && (
+        <View style={aiStyles.trapChip}>
+          <Text style={aiStyles.trapText}>⚠ 밸류트랩 의심 · 싼데 품질 약함</Text>
+        </View>
       )}
 
       <View style={aiStyles.divider} />
@@ -94,6 +127,17 @@ const aiStyles = StyleSheet.create({
   price: { fontSize: 20, color: '#FFFFFF', fontWeight: '800', letterSpacing: -0.5 },
   change: { fontSize: 13, fontWeight: '700' },
   metaLine: { fontSize: 12, color: '#6B7280', fontWeight: '600', marginBottom: 10 },
+  factorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  recPill: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
+  recPillText: { fontSize: 11, fontWeight: '800' },
+  factorPill: { backgroundColor: '#1E2A42', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  factorPillText: { fontSize: 11, color: '#A9B6C8', fontWeight: '700' },
+  trapChip: {
+    alignSelf: 'flex-start', backgroundColor: '#FF446618',
+    borderColor: '#FF446655', borderWidth: 1, borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 4, marginBottom: 10,
+  },
+  trapText: { fontSize: 11, color: '#FF6B82', fontWeight: '700' },
   divider: { height: 1, backgroundColor: '#1E2A42', marginBottom: 10 },
   reason: { fontSize: 13, color: '#A9B6C8', lineHeight: 19, marginBottom: 12, flex: 1 },
   bottomRow: { flexDirection: 'row', gap: 8, marginTop: 'auto' },

@@ -512,4 +512,8 @@ function crossCheckBusinessValue(qualityScore, bizStrength) {
   return { verdict: '중립', valueTrap: false, text: '정량·정성이 뚜렷한 신호를 주지 않음', confidencePenalty: 0 };
 }
 
-module.exports = { runScoreEngine, buildEngineInput, crossCheckBusinessValue, WEIGHTS };
+module.exports = {
+  runScoreEngine, buildEngineInput, crossCheckBusinessValue, WEIGHTS,
+  // 발굴(recommend.js)에서 표현·가드를 통일하기 위해 공유 (B안)
+  scoreValuation, scoreQuality, detectGuards, toRecommendation,
+};

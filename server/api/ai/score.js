@@ -55,7 +55,7 @@ module.exports = async (req, res) => {
   const input = buildEngineInput(stockData);
   try {
     const dist = await getUniverseDistribution();
-    if (dist) input.universeRank = rankStock({ per: stockData.per, pbr: stockData.pbr, marketCap: stockData.marketCap }, dist);
+    if (dist) input.universeRank = rankStock({ per: stockData.per, roe: stockData.roe, marketCap: stockData.marketCap }, dist);
   } catch (_) { /* 분포 없으면 랭킹 생략 */ }
   // 백테스트 실측 trackRecord (현재 모멘텀 구간의 과거 방향 적중률) → 신뢰도 공식에 투입
   let trackRecordInfo = { trackRecord: 0.5, measured: false, bucket: null, samples: 0 };

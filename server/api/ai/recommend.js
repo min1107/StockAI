@@ -4,6 +4,8 @@ const { Redis } = require('@upstash/redis');
 const { KIS_BASE_URL, getAuthHeaders } = require('../../lib/kisAuth');
 const { getMacroForAI, getNewsForAI, getSupplyForAI } = require('../macro/context');
 const { getScreenCandidates } = require('../../lib/screenCache');
+const { getUniverseDistribution, percentileOf } = require('../../lib/universeCache');
+const { scoreValuation, scoreQuality, detectGuards, toRecommendation } = require('../../lib/scoreEngine');
 
 let redis = null;
 try {
@@ -169,23 +171,37 @@ async function fetchAllPrices(stocks) {
 }
 
 // 복합 점수 랭킹 — PER(가치)·PBR(가치)·ROE(수익성)·배당수익률(환원) 멀티팩터.
-// 절대 임계값이 아니라 후보군 내부 순위로 정규화(0~1). 값 없으면 중립 0.5.
-function rankByComposite(list) {
-  const pct = (key, higherIsBetter) => {
+// 정규화 0~1, 값 없으면 중립 0.5.
+//  - PER·ROE: 유니버스(전종목 ~2,600) 분포 기준 백분위 → "시장 전체에서의 위치" 반영(A-2)
+//  - PBR·배당: 전종목 수집엔 없고 숏리스트 KIS 보강분만 존재 → 후보군 내부 백분위
+//  - dist(유니버스 분포)가 없으면 PER·ROE도 후보군 내부로 자동 폴백
+function rankByComposite(list, dist) {
+  // 후보군 내부 백분위 함수 생성(폴백 및 PBR·배당용)
+  const poolPct = (key, higherIsBetter) => {
     const vals = list.map(s => s[key]).filter(v => typeof v === 'number' && isFinite(v));
     if (vals.length === 0) return () => 0.5;
     const sorted = [...vals].sort((a, b) => a - b);
     return (v) => {
       if (typeof v !== 'number' || !isFinite(v)) return 0.5;
-      // v 이하 개수 비율 = 백분위(낮을수록 0). 낮은 게 좋으면 반전.
-      let rank = sorted.filter(x => x <= v).length / sorted.length;
+      const rank = sorted.filter(x => x <= v).length / sorted.length;
       return higherIsBetter ? rank : 1 - rank;
     };
   };
-  const perPct = pct('per', false);   // 낮을수록 좋음
-  const pbrPct = pct('pbr', false);   // 낮을수록 좋음
-  const roePct = pct('roe', true);    // 높을수록 좋음
-  const divPct = pct('dividendYield', true); // 높을수록 좋음
+
+  const pbrPct = poolPct('pbr', false);          // 낮을수록 좋음
+  const divPct = poolPct('dividendYield', true); // 높을수록 좋음
+
+  // PER·ROE: 유니버스 분포 우선, 없으면 후보군 내부
+  const perPoolPct = poolPct('per', false);
+  const roePoolPct = poolPct('roe', true);
+  const perPct = (v) => {
+    const p = dist ? percentileOf(dist.per, v) : null; // 0~1, 클수록 PER 큼(=비쌈)
+    return p == null ? perPoolPct(v) : 1 - p;          // 낮을수록 좋음 → 반전
+  };
+  const roePct = (v) => {
+    const p = dist ? percentileOf(dist.roe, v) : null;  // 클수록 ROE 큼(=좋음)
+    return p == null ? roePoolPct(v) : p;
+  };
 
   return list
     .map(s => ({
@@ -194,6 +210,36 @@ function rankByComposite(list) {
             + 0.35 * roePct(s.roe) + 0.15 * divPct(s.dividendYield),
     }))
     .sort((a, b) => b._score - a._score);
+}
+
+// B안: 랭킹은 백분위(_score) 유지하되, 표현·추천척도·가드를 종목상세(scoreEngine)와 통일.
+//  - factors: 상세와 동일한 밸류·품질 팩터 함수 재사용 → 같은 라벨/어휘
+//  - guards : 밸류트랩(싼데 품질 낮음)·떨어지는칼날을 발굴에도 적용
+//  - score  : _score(0~1) → -100~+100 (상세와 같은 척도) + 가드 패널티(1건당 ~8점)
+//  - recommendation: 상세와 동일한 toRecommendation 라벨(매수/관심/관망)
+function unifyPresentation(list) {
+  return list.map(s => {
+    const valueF = scoreValuation({ per: s.per, pbr: s.pbr, dividendYield: s.dividendYield, sectorPer: null });
+    const qualityF = scoreQuality({ roe: s.roe });
+    const drawdown = (s.fiftyTwoWeekHigh > 0 && s.currentPrice > 0)
+      ? ((s.fiftyTwoWeekHigh - s.currentPrice) / s.fiftyTwoWeekHigh) * 100 : null;
+    const guards = detectGuards({
+      factors: [valueF, qualityF],
+      marginOfSafety: drawdown,
+      supplyScore: null, qualityScore: qualityF.score, technicalScore: null,
+    });
+    const guardPenalty = guards.filter(g => g.triggered).reduce((a, g) => a + (g.penalty || 0), 0);
+    let score = Math.round((s._score - 0.5) * 200 + guardPenalty * 8);
+    score = Math.max(-100, Math.min(100, score));
+    return {
+      ...s,
+      factors: [valueF, qualityF],
+      guards,
+      score,                                  // -100~+100 (상세와 동일 척도)
+      recommendation: toRecommendation(score, false),
+      valueTrap: guards.some(g => g.key === 'value_trap' && g.triggered),
+    };
+  });
 }
 
 module.exports = async (req, res) => {
@@ -211,9 +257,12 @@ module.exports = async (req, res) => {
       } catch (_) {}
     }
 
-    // 스크리닝 캐시 확인 (cron/screen.js가 매일 오전 8시 갱신)
+    // 스크리닝 캐시 + 유니버스 분포(A-2: PER·ROE 시장 전체 백분위용) 동시 조회
     let candidates;
-    const screenCache = await getScreenCandidates();
+    const [screenCache, universeDist] = await Promise.all([
+      getScreenCandidates(),
+      getUniverseDistribution().catch(() => null),
+    ]);
     if (screenCache && screenCache.candidates && screenCache.candidates.length >= 5) {
       // KRX 스크리닝 프리리스트(저PER·고ROE, 최대 60개) → KIS로 PBR·배당·실시간 시세 보강
       const prelist = screenCache.candidates.slice(0, 60);
@@ -222,8 +271,8 @@ module.exports = async (req, res) => {
       // KIS 보강 실패 시 네이버 원본으로라도 진행
       const base = enriched.length >= 5 ? enriched : prelist;
       // 멀티팩터 복합점수 상위 20개만 AI에 투입 (PBR·배당이 선별에 실제 반영됨)
-      candidates = rankByComposite(base).slice(0, 20);
-      console.log(`🧮 복합점수 선별: ${base.length}개 → 상위 ${candidates.length}개`);
+      candidates = unifyPresentation(rankByComposite(base, universeDist).slice(0, 20));
+      console.log(`🧮 복합점수 선별: ${base.length}개 → 상위 ${candidates.length}개 (유니버스분포 ${universeDist ? '적용' : '없음→후보군내부'})`);
     } else {
       // 캐시 없으면 기존 70개 풀 폴백
       console.log('⚠️ 스크리닝 캐시 없음 → 기존 풀 폴백');
@@ -241,7 +290,7 @@ module.exports = async (req, res) => {
       if (filtered.length < 8) filtered = applyFilter(2.5, 40, 0.88);
       if (filtered.length < 8) filtered = applyFilter(3.5, 55, 0.95);
       // 폴백도 동일한 복합점수로 랭킹 (ROE는 없을 수 있어 중립 처리됨)
-      candidates = rankByComposite(filtered).slice(0, 20);
+      candidates = unifyPresentation(rankByComposite(filtered, universeDist).slice(0, 20));
     }
 
     if (candidates.length < 3) {
@@ -280,6 +329,13 @@ module.exports = async (req, res) => {
       if (s.marketCap > 0) {
         parts.push(`/ 시총 ${s.marketCap.toLocaleString()}억`);
       }
+      // 통일 어휘(B안): 종목상세와 같은 발굴점수·밸류/품질 라벨·밸류트랩 경고
+      if (typeof s.score === 'number') parts.push(`/ 발굴점수 ${s.score >= 0 ? '+' : ''}${s.score}(${s.recommendation})`);
+      const valueF = s.factors?.find(f => f.key === 'value');
+      const qualityF = s.factors?.find(f => f.key === 'quality');
+      if (valueF?.available) parts.push(`/ 밸류 ${valueF.label}`);
+      if (qualityF?.available) parts.push(`/ 품질 ${qualityF.label}`);
+      if (s.valueTrap) parts.push(`/ ⚠밸류트랩의심(싼데 품질 약함)`);
       return parts.join(' ');
     }).join('\n');
 
@@ -306,7 +362,7 @@ module.exports = async (req, res) => {
 ${candidateText}
 
 위 후보 중에서 정확히 5개를 선별하라.
-기준: 저평가 정도가 가장 깊고, 시장이 아직 발굴하지 못한 종목 우선. 현재 거시경제 환경에서 수혜 가능성도 고려하라.
+기준: '발굴점수'(종목상세 분석과 동일한 -100~+100 척도)가 높고, 밸류·품질 라벨이 함께 양호한 종목 우선. 시장이 아직 발굴하지 못한 종목을 선호하되, '⚠밸류트랩의심'으로 표시된 종목은 싸 보여도 품질이 약하니 매우 신중히 다루고 선정 시 그 위험을 reason에 반드시 명시하라. 현재 거시경제 환경에서 수혜 가능성도 고려하라.
 
 JSON:
 {"recommendations":[
@@ -354,17 +410,38 @@ JSON:
       recommendations = [...recommendations, ...extras];
     }
 
-    // 추천 확정 종목만 실시간 시세로 현재가·등락률 갱신.
-    // (스크리닝 캐시 후보엔 changeRate가 없어 카드 등락률이 0%로 떴음 → 최종 5개만 재조회)
+    // B-3: 최종 확정 5개를 KIS 실측으로 교차검증·표시값 권위화.
+    //  - 카드에 보이는 현재가·등락률·PER·PBR·배당·시총·52주를 KIS(상세화면과 동일 출처) 값으로 확정
+    //  - ROE는 KIS 미제공 → 네이버 스크리닝 값 유지
+    //  - 값이 바뀌었으니 발굴점수·밸류/품질·가드를 그 값으로 재계산(카드 숫자=점수 근거 일치)
     try {
       const fresh = await fetchAllPrices(recommendations);
       const freshMap = new Map(fresh.map(f => [f.code, f]));
       recommendations = recommendations.map(r => {
         const f = freshMap.get(r.code);
-        return f ? { ...r, currentPrice: f.currentPrice ?? r.currentPrice, changeRate: f.changeRate } : r;
+        if (!f) return { ...r, verified: false };
+        // 네이버 대비 KIS PER 괴리 모니터링(로그만) — 컬럼밀림·데이터오염 조기탐지
+        if (typeof r.per === 'number' && typeof f.per === 'number' && r.per > 0 && f.per > 0) {
+          const gap = Math.abs(f.per - r.per) / r.per;
+          if (gap > 0.5) console.warn(`⚠️ PER 괴리 ${r.name}: 스크리닝 ${r.per} vs KIS ${f.per} (${(gap * 100).toFixed(0)}%)`);
+        }
+        return {
+          ...r,
+          currentPrice:     f.currentPrice ?? r.currentPrice,
+          changeRate:       f.changeRate ?? r.changeRate,
+          per:              f.per ?? r.per,
+          pbr:              f.pbr ?? r.pbr,
+          dividendYield:    (f.dividendYield != null ? f.dividendYield : r.dividendYield),
+          marketCap:        f.marketCap || r.marketCap,
+          fiftyTwoWeekHigh: f.fiftyTwoWeekHigh || r.fiftyTwoWeekHigh,
+          fiftyTwoWeekLow:  f.fiftyTwoWeekLow || r.fiftyTwoWeekLow,
+          verified: true, // 표시값 KIS 권위화 완료
+        };
       });
+      // 권위화된 값 기준으로 발굴점수·밸류/품질·가드 재계산 (카드 숫자와 점수 근거 일치)
+      recommendations = unifyPresentation(recommendations);
     } catch (e) {
-      console.warn('실시간 시세 갱신 생략:', e.message);
+      console.warn('KIS 표시값 권위화 생략:', e.message);
     }
 
     const result = {

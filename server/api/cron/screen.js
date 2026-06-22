@@ -153,19 +153,33 @@ module.exports = async (req, res) => {
       return;
     }
 
+    // 🆕 이상치 가드: 명백한 비정상치(컬럼밀림 가짜값·초소형 부실주) 배제
+    //  - PER < 2  : 정상기업엔 거의 없는 값 → 데이터 이상치로 간주
+    //  - ROE > 80%: 비지속/이상치(예: 일정실업 130%) 컷
+    //  - 시총 < 500억: 초소형 잡주 컷 (중소형 강소기업은 보존)
+    const PER_MIN = 2;
+    const ROE_MAX = 80;
+    const MCAP_MIN = 500; // 억원
+    const isSaneValue = (s) => s.per >= PER_MIN && s.roe <= ROE_MAX; // 가짜 지표값 제외
+    const isSaneStock = (s) => isSaneValue(s) && s.marketCap >= MCAP_MIN; // 잡주까지 제외
+
     // 🆕 P5: 전종목 PER·ROE·시총 분포를 유니버스 랭킹용으로 캐시 (기존엔 버려지던 데이터)
+    //   가짜 지표값(PER<2·ROE>80)은 분포 백분위를 오염시키므로 제외, 시총 범위는 대표성 위해 유지
     try {
-      const dist = await setUniverseDistribution(allStocks);
-      console.log(`📊 유니버스 분포 캐시: PER/ROE/시총 (표본 ${dist.count})`);
+      const distInput = allStocks.filter(s => s.per > 0 && isSaneValue(s));
+      const dist = await setUniverseDistribution(distInput);
+      console.log(`📊 유니버스 분포 캐시: PER/ROE/시총 (정제표본 ${dist.count}/${allStocks.length})`);
     } catch (e) { console.warn('유니버스 분포 캐시 실패:', e.message); }
 
-    // 저평가 + 수익성 필터 (저PER & 고ROE)
-    //  - PER: 0 초과 ~ perMax 이하 (적자 제외, 저평가)
-    //  - ROE: roeMin 이상 (수익성 있는 기업만 — 저PER 함정주 배제)
+    // 저평가 + 수익성 필터 (저PER & 고ROE) + 이상치 가드
+    //  - PER: PER_MIN 이상 ~ perMax 이하 (적자·이상치 제외, 저평가)
+    //  - ROE: roeMin 이상 ~ ROE_MAX 이하 (수익성 있되 비정상 고ROE 배제)
+    //  - 시총: MCAP_MIN 이상 (초소형 잡주 배제)
     const applyFilter = (perMax, roeMin) =>
       allStocks.filter(s =>
-        s.per > 0 && s.per <= perMax &&
-        s.roe >= roeMin
+        s.per <= perMax &&
+        s.roe >= roeMin &&
+        isSaneStock(s)
       );
 
     let candidates = applyFilter(12, 12);            // 싸고 수익성 좋은

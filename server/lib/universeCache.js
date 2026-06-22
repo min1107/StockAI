@@ -33,15 +33,28 @@ function toBreakpoints(values) {
   return { bp, n: arr.length };
 }
 
-// 전종목 raw [{per,pbr,marketCap}] → 분포 객체
+// 전종목 raw [{per,roe,marketCap}] → 분포 객체
+// ⚠️ 전종목 스캔(네이버)에서 실제 확보되는 값은 per·roe·marketCap.
+//    pbr·배당은 KIS로 숏리스트(60개)만 보강되므로 유니버스 분포엔 없음.
 function buildDistribution(stocks) {
   return {
     per: toBreakpoints(stocks.map(s => s.per)),
-    pbr: toBreakpoints(stocks.map(s => s.pbr)),
+    roe: toBreakpoints(stocks.map(s => s.roe)),
     marketCap: toBreakpoints(stocks.map(s => s.marketCap)),
     count: stocks.length,
     builtAt: new Date().toISOString(),
   };
+}
+
+// 백분위 구간점({bp,n})과 값 v → 0~1 백분위(클수록 v가 분포에서 높은 위치).
+// 분포가 없거나 v가 무효면 null 반환(호출측이 폴백/중립 처리).
+function percentileOf(dist, v) {
+  if (!dist || !Array.isArray(dist.bp) || dist.bp.length === 0) return null;
+  if (typeof v !== 'number' || !isFinite(v)) return null;
+  const bp = dist.bp;
+  let k = 0;
+  while (k <= 100 && v >= bp[k]) k++;
+  return k / 100; // 0~1
 }
 
 async function setUniverseDistribution(stocks) {
@@ -64,4 +77,4 @@ async function getUniverseDistribution() {
   return null;
 }
 
-module.exports = { setUniverseDistribution, getUniverseDistribution, buildDistribution };
+module.exports = { setUniverseDistribution, getUniverseDistribution, buildDistribution, percentileOf };
