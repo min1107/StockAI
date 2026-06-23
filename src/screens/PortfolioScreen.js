@@ -1437,6 +1437,34 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                       </Text>
                     );
                   })()}
+
+                  {/* 인식한 종목을 어느 계좌에 넣을지 (배치 전체 적용) */}
+                  {accounts.length > 0 && (
+                    <View style={{ marginBottom: 10 }}>
+                      <Text style={[styles.inputLabel, { marginBottom: 6 }]}>어느 계좌에 넣을까요?</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <TouchableOpacity
+                            style={[tabStyles.pill, targetAccountId === null && tabStyles.pillActive]}
+                            onPress={() => setTargetAccountId(null)}
+                          >
+                            <Text style={[tabStyles.pillText, targetAccountId === null && tabStyles.pillTextActive]}>미분류</Text>
+                          </TouchableOpacity>
+                          {accounts.map(acc => (
+                            <TouchableOpacity
+                              key={acc.id}
+                              style={[tabStyles.pill, targetAccountId === acc.id && { borderColor: acc.color + '80', backgroundColor: acc.color + '18' }]}
+                              onPress={() => setTargetAccountId(acc.id)}
+                            >
+                              <View style={[tabStyles.dot, { backgroundColor: acc.color }]} />
+                              <Text style={[tabStyles.pillText, targetAccountId === acc.id && { color: acc.color }]}>{acc.alias}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  )}
+
                   <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
                     {pasteRows.map(row => {
                       const complete = rowComplete(row);
