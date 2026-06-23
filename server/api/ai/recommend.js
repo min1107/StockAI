@@ -6,6 +6,7 @@ const { getMacroForAI, getNewsForAI, getSupplyForAI } = require('../macro/contex
 const { getScreenCandidates } = require('../../lib/screenCache');
 const { getUniverseDistribution, percentileOf } = require('../../lib/universeCache');
 const { scoreValuation, scoreQuality, detectGuards, toRecommendation } = require('../../lib/scoreEngine');
+const { getBusinessSummary } = require('../dart/business');
 
 let redis = null;
 try {
@@ -442,6 +443,90 @@ JSON:
       recommendations = unifyPresentation(recommendations);
     } catch (e) {
       console.warn('KIS 표시값 권위화 생략:', e.message);
+    }
+
+    // 최종 5개에 DART '사업의 개요' 기반 회사 소개(about) 생성 — 카드 3줄용.
+    //  - 사업/제품·강점·기대포인트를 실제 공시에 근거해 서술(무명 소형주 할루시네이션 방지)
+    //  - 종목별 about는 Redis 30일 캐시 → 한 번 생성한 회사는 즉시 재사용(콜드 DART 최소화)
+    //  - DART 콜드 다운로드는 ~35초라 타임아웃 38초. best-effort: 실패하면 기존 reason 폴백.
+    try {
+      const ABOUT_TTL = 30 * 24 * 60 * 60;
+      const aboutKey = (code) => `ai_about_${code}`;
+
+      // 1) 캐시된 about 먼저 채움
+      const aboutByCode = {};
+      if (redis) {
+        const cached = await Promise.allSettled(recommendations.map(r => redis.get(aboutKey(r.code))));
+        cached.forEach((c, i) => {
+          const v = c.status === 'fulfilled' ? c.value : null;
+          if (v && typeof v === 'string') aboutByCode[recommendations[i].code] = v;
+        });
+      }
+
+      // 2) 캐시 없는 종목만 DART 수집 → 생성
+      const missing = recommendations.filter(r => !aboutByCode[r.code]);
+      if (missing.length > 0) {
+        const raceTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+        const bizSettled = await Promise.allSettled(
+          missing.map(r => raceTimeout(getBusinessSummary(r.code).catch(() => null), 38000))
+        );
+        const bizMap = new Map();
+        bizSettled.forEach((res, i) => {
+          const v = res.status === 'fulfilled' ? res.value : null;
+          if (v && v.ok && v.businessSummary) bizMap.set(missing[i].code, v.businessSummary);
+        });
+
+        if (bizMap.size > 0) {
+          const bizText = missing.map(r => {
+            const sum = bizMap.get(r.code);
+            return `- ${r.name}(${r.code})${r.sector ? `[${r.sector}]` : ''}: ${sum ? sum.slice(0, 1200) : '(사업보고서 미확보 — 업종 기반 일반 서술, 모르면 솔직히)'}`;
+          }).join('\n\n');
+
+          const aboutCompletion = await groq.chat.completions.create({
+            model: 'llama-3.3-70b-versatile',
+            temperature: 0.3,
+            max_tokens: 1100,
+            messages: [
+              {
+                role: 'system',
+                content: `너는 증권 애널리스트다. 각 기업의 'DART 사업의 개요' 발췌를 읽고, 투자자가 "이 회사가 무엇을 하는 곳인지" 한눈에 알 수 있는 간결한 소개를 쓴다.
+규칙:
+1. 각 회사당 2~3문장. (핵심 사업·주력 제품 → 차별적 강점/기술 → 기대 포인트) 순으로 자연스럽게.
+2. 반드시 제공된 사업의 개요에 근거할 것. 발췌에 없는 구체 수치(점유율 등)·고객사·계약을 지어내지 말 것.
+3. 사업보고서가 미확보된 종목은 업종 일반 특성으로만 보수적으로 서술하고, 모르면 솔직하게 일반적으로.
+4. 밸류에이션(PER/PBR/저평가)·주가·목표가 얘기는 절대 하지 말 것. 오직 '사업 소개'만.
+5. 정중한 존댓말(~입니다/~합니다). 한글만. JSON 외 텍스트 금지.`,
+              },
+              {
+                role: 'user',
+                content: `회사별 DART 사업의 개요 발췌:
+${bizText}
+
+JSON으로만 답하라(키는 종목코드):
+{"about":{"${missing[0]?.code || '코드'}":"2~3문장 회사 소개", ...}}`,
+              },
+            ],
+          });
+          const t = aboutCompletion.choices[0]?.message?.content || '';
+          const m = t.match(/\{[\s\S]*\}/);
+          if (m) {
+            const gen = (JSON.parse(m[0]).about) || {};
+            for (const r of missing) {
+              const text = gen[r.code] || gen[String(r.code)];
+              if (text) {
+                aboutByCode[r.code] = text;
+                // DART 사업개요가 실제로 확보된 종목만 캐시(빈약한 폴백 문구는 다음에 재시도)
+                if (redis && bizMap.has(r.code)) { try { await redis.set(aboutKey(r.code), text, { ex: ABOUT_TTL }); } catch (_) {} }
+              }
+            }
+          }
+        }
+      }
+
+      recommendations = recommendations.map(r => ({ ...r, about: aboutByCode[r.code] || r.about || null }));
+      console.log(`📝 회사소개(about): ${recommendations.filter(r => r.about).length}/${recommendations.length}개 (신규생성 ${missing.length}개 시도)`);
+    } catch (e) {
+      console.warn('발굴 회사소개(about) 생성 생략:', e.message);
     }
 
     const result = {

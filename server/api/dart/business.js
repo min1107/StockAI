@@ -88,59 +88,73 @@ function extractBusinessOverview(doc) {
   return best.length > MAX_LEN ? best.slice(0, MAX_LEN) + '…' : best;
 }
 
-module.exports = async (req, res) => {
+/**
+ * 사업의 개요 요약을 반환하는 재사용 함수 (HTTP 핸들러 + recommend.js 발굴소개 공용).
+ * @returns {Promise<{ok:true,...}|{ok:false,error:string,status:number}>}
+ */
+async function getBusinessSummary(code) {
+  const stock = String(code || '').split('.')[0];
+  if (!/^\d{6}$/.test(stock)) return { ok: false, error: 'DART는 국내주식(6자리)만 제공', status: 400 };
+  if (!process.env.DART_API_KEY) return { ok: false, error: 'DART 미설정', status: 503 };
+
+  const corpCode = await getCorpCode(stock);
+  if (!corpCode) return { ok: false, error: 'corp_code 매핑 실패', status: 404 };
+
+  const report = await findLatestReport(corpCode);
+  if (!report) return { ok: false, error: '정기보고서 없음', status: 404 };
+  const rceptNo = report.rcept_no;
+
+  // 추출 결과 캐시 (rcept_no 기준)
+  const cacheKey = `dart_biz2_${rceptNo}`;
+  if (redis) {
+    const cached = await withTimeout(redis.get(cacheKey), 4000, null);
+    if (cached && cached.businessSummary) return { ok: true, ...cached };
+  }
+
+  // 문서 다운로드 → 본문 추출
+  const resp = await axios.get(`${DART}/document.xml`, {
+    params: { crtfc_key: process.env.DART_API_KEY, rcept_no: rceptNo },
+    responseType: 'arraybuffer', timeout: 30000,
+  });
+  const zip = new AdmZip(Buffer.from(resp.data));
+  const entries = zip.getEntries();
+  if (!entries.length) return { ok: false, error: '문서 비어있음', status: 502 };
+  // 본문은 보통 첨부(_NNNNN.xml 재무제표)보다 가장 큰 메인 파일
+  const main = entries.reduce((a, b) => (b.header.size > a.header.size ? b : a), entries[0]);
+  const doc = main.getData().toString('utf8');
+
+  const businessSummary = extractBusinessOverview(doc);
+  if (!businessSummary) return { ok: false, error: '사업의 개요 섹션을 찾지 못함', status: 502, rceptNo };
+
+  const result = {
+    code: stock,
+    rceptNo,
+    reportName: (report.report_nm || '').trim(),
+    asOf: report.rcept_dt || null,
+    businessSummary,
+  };
+
+  if (redis) {
+    try { await withTimeout(redis.set(cacheKey, result, { ex: BIZ_TTL }), 4000, null); } catch (_) {}
+  }
+  return { ok: true, ...result };
+}
+
+const handler = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
     const { code } = req.query;
     if (!code) return res.status(400).json({ error: '종목코드(code) 필요' });
-    const stock = String(code).split('.')[0];
-    if (!/^\d{6}$/.test(stock)) return res.status(400).json({ error: 'DART는 국내주식(6자리)만 제공' });
-    if (!process.env.DART_API_KEY) return res.status(503).json({ error: 'DART 미설정' });
-
-    const corpCode = await getCorpCode(stock);
-    if (!corpCode) return res.status(404).json({ error: 'corp_code 매핑 실패' });
-
-    const report = await findLatestReport(corpCode);
-    if (!report) return res.status(404).json({ error: '정기보고서 없음' });
-    const rceptNo = report.rcept_no;
-
-    // 추출 결과 캐시 (rcept_no 기준)
-    const cacheKey = `dart_biz2_${rceptNo}`;
-    if (redis) {
-      const cached = await withTimeout(redis.get(cacheKey), 4000, null);
-      if (cached && cached.businessSummary) return res.status(200).json(cached);
-    }
-
-    // 문서 다운로드 → 본문 추출
-    const resp = await axios.get(`${DART}/document.xml`, {
-      params: { crtfc_key: process.env.DART_API_KEY, rcept_no: rceptNo },
-      responseType: 'arraybuffer', timeout: 30000,
-    });
-    const zip = new AdmZip(Buffer.from(resp.data));
-    const entries = zip.getEntries();
-    if (!entries.length) return res.status(502).json({ error: '문서 비어있음' });
-    // 본문은 보통 첨부(_NNNNN.xml 재무제표)보다 가장 큰 메인 파일
-    const main = entries.reduce((a, b) => (b.header.size > a.header.size ? b : a), entries[0]);
-    const doc = main.getData().toString('utf8');
-
-    const businessSummary = extractBusinessOverview(doc);
-    if (!businessSummary) return res.status(502).json({ error: '사업의 개요 섹션을 찾지 못함', rceptNo });
-
-    const result = {
-      code: stock,
-      rceptNo,
-      reportName: (report.report_nm || '').trim(),
-      asOf: report.rcept_dt || null,
-      businessSummary,
-    };
-
-    if (redis) {
-      try { await withTimeout(redis.set(cacheKey, result, { ex: BIZ_TTL }), 4000, null); } catch (_) {}
-    }
-    res.status(200).json(result);
+    const r = await getBusinessSummary(code);
+    if (!r.ok) return res.status(r.status || 500).json({ error: r.error, rceptNo: r.rceptNo });
+    const { ok, status, ...payload } = r;
+    res.status(200).json(payload);
   } catch (error) {
     console.error(`DART business error [${req.query.code}]:`, error.message);
     res.status(500).json({ error: 'DART 사업보고서 조회 실패' });
   }
 };
+
+module.exports = handler;
+module.exports.getBusinessSummary = getBusinessSummary;

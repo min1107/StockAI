@@ -87,8 +87,8 @@ function AIPickCard({ item, index, onPress }) {
 
       <View style={aiStyles.divider} />
 
-      {/* 선택 이유 (핵심) */}
-      <Text style={aiStyles.reason} numberOfLines={3}>{item.reason}</Text>
+      {/* 회사 소개 (DART 사업개요 기반) — 없으면 선택 이유로 폴백 */}
+      <Text style={aiStyles.reason} numberOfLines={4}>{item.about || item.reason}</Text>
 
       {/* 하단 태그 */}
       <View style={aiStyles.bottomRow}>
