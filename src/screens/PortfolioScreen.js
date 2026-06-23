@@ -943,6 +943,13 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
 
   // 계좌 선택 state
   const [targetAccountId, setTargetAccountId] = useState(null);
+  const [showCreateAcc, setShowCreateAcc] = useState(false); // 인라인 새 계좌 만들기
+
+  // 인라인으로 계좌 생성 → 그 계좌를 바로 선택
+  const handleInlineCreateAccount = async (brokerage, alias, color) => {
+    const acc = await onCreateAccount?.(brokerage, alias, color);
+    if (acc?.id) setTargetAccountId(acc.id);
+  };
 
   useEffect(() => {
     if (visible) setTargetAccountId(defaultAccountId || null);
@@ -986,7 +993,7 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
     setPasteText(''); setPasteRows([]);
     setImgBusy(false); setImgError(''); setEditingId(null);
     setSearchQuery(''); setSearchResults([]);
-    setTargetAccountId(null);
+    setTargetAccountId(null); setShowCreateAcc(false);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -1187,6 +1194,7 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
   };
 
   return (
+    <>
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <TouchableOpacity style={styles.modalBg} activeOpacity={1} onPress={handleClose} />
@@ -1223,10 +1231,7 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                       {onCreateAccount && (
                         <TouchableOpacity
                           style={[tabStyles.pill, tabStyles.pillAdd]}
-                          onPress={async () => {
-                            // 인라인 계좌 생성을 위해 닫고 계좌 추가 탭 열기는 복잡하므로 알림으로 안내
-                            Alert.alert('계좌 추가', '종목 추가를 닫고 포트폴리오 탭에서 "+ 계좌" 버튼을 눌러 계좌를 먼저 만들어주세요.');
-                          }}
+                          onPress={() => setShowCreateAcc(true)}
                         >
                           <Text style={tabStyles.addText}>+ 새 계좌</Text>
                         </TouchableOpacity>
@@ -1458,8 +1463,8 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                     );
                   })()}
 
-                  {/* 인식한 종목을 어느 계좌에 넣을지 (배치 전체 적용) */}
-                  {accounts.length > 0 && (
+                  {/* 인식한 종목을 어느 계좌에 넣을지 (배치 전체 적용, 계좌 없어도 새로 만들 수 있게 항상 표시) */}
+                  {(
                     <View style={{ marginBottom: 10 }}>
                       <Text style={[styles.inputLabel, { marginBottom: 6 }]}>어느 계좌에 넣을까요?</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -1480,6 +1485,11 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                               <Text style={[tabStyles.pillText, targetAccountId === acc.id && { color: acc.color }]}>{acc.alias}</Text>
                             </TouchableOpacity>
                           ))}
+                          {onCreateAccount && (
+                            <TouchableOpacity style={[tabStyles.pill, tabStyles.pillAdd]} onPress={() => setShowCreateAcc(true)}>
+                              <Text style={tabStyles.addText}>+ 새 계좌</Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       </ScrollView>
                     </View>
@@ -1649,6 +1659,14 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
         </View>
       </KeyboardAvoidingView>
     </Modal>
+
+    {/* 인라인 새 계좌 만들기 (종목 추가 흐름 안에서 바로 생성→자동 선택) */}
+    <CreateAccountModal
+      visible={showCreateAcc}
+      onClose={() => setShowCreateAcc(false)}
+      onCreate={handleInlineCreateAccount}
+    />
+    </>
   );
 }
 
@@ -1919,6 +1937,7 @@ export default function PortfolioScreen({ navigation }) {
   const handleCreateAccount = async (brokerage, alias, color) => {
     const newAcc = await createAccount(user.id, brokerage, alias, color);
     setAccounts(prev => [...prev, newAcc]);
+    return newAcc; // 인라인 생성 후 그 계좌를 바로 선택하기 위해 반환
   };
 
   const handleConfirmMove = async (accountId) => {
