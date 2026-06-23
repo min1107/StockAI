@@ -53,8 +53,8 @@ function percentileOf(dist, v) {
   if (typeof v !== 'number' || !isFinite(v)) return null;
   const bp = dist.bp;
   let k = 0;
-  while (k <= 100 && v >= bp[k]) k++;
-  return k / 100; // 0~1
+  while (k < bp.length && v >= bp[k]) k++; // v 이하 구간점 개수
+  return Math.min(k, bp.length - 1) / (bp.length - 1); // 0~1 (101개 → /100, 1.0 초과 방지)
 }
 
 async function setUniverseDistribution(stocks) {
