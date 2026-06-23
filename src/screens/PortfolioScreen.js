@@ -23,7 +23,7 @@ import { LineChart, PieChart } from 'react-native-chart-kit';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import AIChatModal from '../components/AIChatModal';
-import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, deleteAccount, moveHolding } from '../services/portfolioAPI';
+import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, deleteAccount, moveHolding, updateAccount } from '../services/portfolioAPI';
 import { fetchStockDetail, searchStocks, ocrPortfolioImage } from '../services/stockAPI';
 import { getMacroContext } from '../services/kisAPI';
 import { analyzePortfolio } from '../services/groqAPI';
@@ -489,7 +489,7 @@ const cStyles = StyleSheet.create({
 });
 
 // ── 계좌 탭바 ────────────────────────────────────────────────────────
-function AccountTabBar({ accounts, selectedId, onSelect, onAdd, onLongPress }) {
+function AccountTabBar({ accounts, selectedId, onSelect, onAdd, onEdit }) {
   return (
     <ScrollView
       horizontal
@@ -503,17 +503,24 @@ function AccountTabBar({ accounts, selectedId, onSelect, onAdd, onLongPress }) {
       >
         <Text style={[tabStyles.pillText, selectedId === 'all' && tabStyles.pillTextActive]}>전체</Text>
       </TouchableOpacity>
-      {accounts.map(acc => (
-        <TouchableOpacity
-          key={acc.id}
-          style={[tabStyles.pill, selectedId === acc.id && { borderColor: acc.color + '80', backgroundColor: acc.color + '18' }]}
-          onPress={() => onSelect(acc.id)}
-          onLongPress={() => onLongPress && onLongPress(acc)}
-        >
-          <View style={[tabStyles.dot, { backgroundColor: acc.color }]} />
-          <Text style={[tabStyles.pillText, selectedId === acc.id && { color: acc.color }]}>{acc.alias}</Text>
-        </TouchableOpacity>
-      ))}
+      {accounts.map(acc => {
+        const active = selectedId === acc.id;
+        return (
+          <TouchableOpacity
+            key={acc.id}
+            style={[tabStyles.pill, active && { borderColor: acc.color + '80', backgroundColor: acc.color + '18' }]}
+            onPress={() => onSelect(acc.id)}
+          >
+            <View style={[tabStyles.dot, { backgroundColor: acc.color }]} />
+            <Text style={[tabStyles.pillText, active && { color: acc.color }]}>{acc.alias}</Text>
+            {active && onEdit && (
+              <TouchableOpacity onPress={() => onEdit(acc)} hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }} style={{ marginLeft: 3 }}>
+                <Text style={{ fontSize: 13 }}>✏️</Text>
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+        );
+      })}
       <TouchableOpacity style={[tabStyles.pill, tabStyles.pillAdd]} onPress={onAdd}>
         <Text style={tabStyles.addText}>+ 계좌</Text>
       </TouchableOpacity>
@@ -617,21 +624,35 @@ const acStyles = StyleSheet.create({
 });
 
 // ── 계좌 생성 모달 ────────────────────────────────────────────────────
-function CreateAccountModal({ visible, onClose, onCreate }) {
+// 새 계좌 추가 + 기존 계좌 수정 겸용 (account 주면 수정 모드: 저장 + 삭제)
+function CreateAccountModal({ visible, onClose, onCreate, account, onSave, onDelete }) {
+  const isEdit = !!account;
   const [brokerage, setBrokerage] = useState(BROKER_OPTIONS[0]);
   const [alias, setAlias] = useState('');
   const [color, setColor] = useState(ACCOUNT_COLORS[0]);
   const [loading, setLoading] = useState(false);
 
+  // 열릴 때 수정모드면 기존 값 프리필, 생성모드면 기본값
+  useEffect(() => {
+    if (!visible) return;
+    if (account) {
+      setBrokerage(account.brokerage || BROKER_OPTIONS[0]);
+      setAlias(account.alias || '');
+      setColor(account.color || ACCOUNT_COLORS[0]);
+    } else {
+      setBrokerage(BROKER_OPTIONS[0]); setAlias(''); setColor(ACCOUNT_COLORS[0]);
+    }
+  }, [visible, account]);
+
   const handleCreate = async () => {
     if (!alias.trim()) { Alert.alert('입력 오류', '계좌 별칭을 입력해주세요.'); return; }
     setLoading(true);
     try {
-      await onCreate(brokerage, alias.trim(), color);
-      setBrokerage(BROKER_OPTIONS[0]); setAlias(''); setColor(ACCOUNT_COLORS[0]);
+      if (isEdit) await onSave(account.id, brokerage, alias.trim(), color);
+      else await onCreate(brokerage, alias.trim(), color);
       onClose();
     } catch (e) {
-      Alert.alert('오류', '계좌 생성 실패: ' + e.message);
+      Alert.alert('오류', (isEdit ? '계좌 수정 실패: ' : '계좌 생성 실패: ') + e.message);
     } finally {
       setLoading(false);
     }
@@ -643,7 +664,7 @@ function CreateAccountModal({ visible, onClose, onCreate }) {
         <TouchableOpacity style={styles.modalBg} activeOpacity={1} onPress={onClose} />
         <View style={styles.modalSheet}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>새 계좌 추가</Text>
+          <Text style={styles.modalTitle}>{isEdit ? '계좌 수정' : '새 계좌 추가'}</Text>
 
           <Text style={[styles.inputLabel, { marginBottom: 8 }]}>색상</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
@@ -694,12 +715,21 @@ function CreateAccountModal({ visible, onClose, onCreate }) {
             </View>
           ) : null}
 
+          {isEdit && onDelete && (
+            <TouchableOpacity
+              style={{ paddingVertical: 11, alignItems: 'center', marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: '#FF446655' }}
+              onPress={() => { onClose(); setTimeout(() => onDelete(account), 0); }}
+            >
+              <Text style={{ color: '#FF6B82', fontWeight: '700', fontSize: 14 }}>🗑  이 계좌 삭제</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.modalBtnRow}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelBtnText}>취소</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.addBtn} onPress={handleCreate} disabled={loading}>
-              {loading ? <ActivityIndicator color="#0A0E27" /> : <Text style={styles.addBtnText}>계좌 만들기</Text>}
+              {loading ? <ActivityIndicator color="#0A0E27" /> : <Text style={styles.addBtnText}>{isEdit ? '저장' : '계좌 만들기'}</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -1847,6 +1877,7 @@ export default function PortfolioScreen({ navigation }) {
   const [selectedAccountId, setSelectedAccountId] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [editAccount, setEditAccount] = useState(null); // 수정할 계좌
   const [moveTarget, setMoveTarget] = useState(null);     // 계좌 이동 시트 대상
   const [actionTarget, setActionTarget] = useState(null); // long-press 액션 시트 대상
   const [loading, setLoading] = useState(false);
@@ -1938,6 +1969,11 @@ export default function PortfolioScreen({ navigation }) {
     const newAcc = await createAccount(user.id, brokerage, alias, color);
     setAccounts(prev => [...prev, newAcc]);
     return newAcc; // 인라인 생성 후 그 계좌를 바로 선택하기 위해 반환
+  };
+
+  const handleUpdateAccount = async (id, brokerage, alias, color) => {
+    const updated = await updateAccount(id, brokerage, alias, color);
+    setAccounts(prev => prev.map(a => a.id === id ? (updated || { ...a, brokerage, alias, color }) : a));
   };
 
   const handleConfirmMove = async (accountId) => {
@@ -2048,7 +2084,7 @@ export default function PortfolioScreen({ navigation }) {
           selectedId={selectedAccountId}
           onSelect={setSelectedAccountId}
           onAdd={() => setShowAccountModal(true)}
-          onLongPress={handleDeleteAccount}
+          onEdit={setEditAccount}
         />
 
         {/* 수익률 추이 차트 */}
@@ -2165,6 +2201,15 @@ export default function PortfolioScreen({ navigation }) {
         visible={showAccountModal}
         onClose={() => setShowAccountModal(false)}
         onCreate={handleCreateAccount}
+      />
+
+      {/* 계좌 수정(이름·색상·증권사) + 삭제 */}
+      <CreateAccountModal
+        visible={!!editAccount}
+        account={editAccount}
+        onClose={() => setEditAccount(null)}
+        onSave={handleUpdateAccount}
+        onDelete={(acc) => handleDeleteAccount(acc)}
       />
 
       <HoldingActionModal
