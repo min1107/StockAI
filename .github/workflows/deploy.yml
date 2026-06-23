@@ -42,6 +42,9 @@ jobs:
       - name: Add .nojekyll (expose _expo/ folder)
         run: touch dist/.nojekyll
 
+      - name: SPA fallback (deep-link reload용 404.html)
+        run: cp dist/index.html dist/404.html
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

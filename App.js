@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, getStateFromPath, getPathFromState } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
@@ -115,6 +115,31 @@ function MainTabs() {
   );
 }
 
+// 웹(PWA) 전용 딥링크/히스토리 연동.
+// 이게 있어야 화면 이동이 브라우저 히스토리에 쌓여서, 안드로이드 시스템 뒤로가기가
+// 앱을 나가지 않고 이전 화면으로 돌아간다. GitHub Pages 베이스 경로(/StockAI)를
+// 커스텀 get*Path 로 붙였다/뗐다 해서 새로고침·딥링크 URL도 깨지지 않게 한다.
+const BASE_PATH = '/StockAI';
+const webLinking = Platform.OS === 'web' ? {
+  prefixes: [
+    'stockai://',
+    (typeof window !== 'undefined' ? window.location.origin : 'https://min1107.github.io') + BASE_PATH,
+  ],
+  config: {
+    screens: {
+      HomeTab: { path: 'home', screens: { Home: '', StockDetail: 'stock/:symbol' } },
+      OpportunityTab: { path: 'opportunity', screens: { Opportunity: '', OpportunityStockDetail: 'stock/:symbol' } },
+      PortfolioTab: { path: 'portfolio', screens: { Portfolio: '', StockDetail: 'stock/:symbol', Auth: 'auth' } },
+      SettingsTab: { path: 'settings', screens: { Settings: '', Auth: 'auth' } },
+    },
+  },
+  getStateFromPath: (path, options) => {
+    const stripped = path.startsWith(BASE_PATH) ? (path.slice(BASE_PATH.length) || '/') : path;
+    return getStateFromPath(stripped, options);
+  },
+  getPathFromState: (state, options) => BASE_PATH + getPathFromState(state, options),
+} : undefined;
+
 export default function App() {
   const [onboardingDone, setOnboardingDone] = useState(null); // null = 로딩 중
 
@@ -150,7 +175,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <NavigationContainer>
+        <NavigationContainer linking={webLinking}>
           <MainTabs />
         </NavigationContainer>
       </AuthProvider>
