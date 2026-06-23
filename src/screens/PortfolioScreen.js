@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,7 +23,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import AIChatModal from '../components/AIChatModal';
 import { getHoldings, deleteHolding, addHolding, getAccounts, createAccount, deleteAccount, moveHolding } from '../services/portfolioAPI';
-import { fetchStockDetail, searchStocks } from '../services/stockAPI';
+import { fetchStockDetail, searchStocks, ocrPortfolioImage } from '../services/stockAPI';
 import { getMacroContext } from '../services/kisAPI';
 import { analyzePortfolio } from '../services/groqAPI';
 import { toSymbol, currencyOf, fmtMoney, toKRW, isKoreanCode, DEFAULT_FX } from '../utils/market';
@@ -903,10 +905,14 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
   const [csvError, setCsvError] = useState('');
   const [selected, setSelected] = useState({});
 
-  // 텍스트 붙여넣기 state
+  // 텍스트 붙여넣기 state (사진 OCR도 같은 pasteRows로 결과를 흘려보내 확인 UI 공용)
   const [pasteText, setPasteText] = useState('');
   const [pasteRows, setPasteRows] = useState([]); // [{_id, name, code, shares, avgPrice, include}]
   const [pasteBusy, setPasteBusy] = useState(false);
+
+  // 사진(스크린샷) OCR state
+  const [imgBusy, setImgBusy] = useState(false);
+  const [imgError, setImgError] = useState('');
 
   // 계좌 선택 state
   const [targetAccountId, setTargetAccountId] = useState(null);
@@ -951,6 +957,7 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
     setStockCode(''); setStockName(''); setShares(''); setAvgPrice('');
     setCsvItems([]); setCsvError(''); setSelected({});
     setPasteText(''); setPasteRows([]);
+    setImgBusy(false); setImgError('');
     setSearchQuery(''); setSearchResults([]);
     setTargetAccountId(null);
   };
@@ -1038,6 +1045,52 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
     setLoading(false);
     Alert.alert('완료', `${added}개 종목이 추가되었습니다.`);
     reset(); onClose();
+  };
+
+  // ── 사진(스크린샷) OCR: 선택 → 압축 → 서버 OCR → pasteRows 로 ──
+  const handlePickImage = async () => {
+    setImgError('');
+    try {
+      // 권한 (웹은 파일선택이라 권한 개념 없음 → 통과)
+      if (Platform.OS !== 'web') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) { setImgError('사진 접근 권한을 허용해주세요.'); return; }
+      }
+      const picked = await ImagePicker.launchImageLibraryAsync({ quality: 1 });
+      if (picked.canceled) return;
+      const asset = picked.assets?.[0];
+      if (!asset?.uri) { setImgError('사진을 불러오지 못했어요.'); return; }
+
+      setImgBusy(true);
+      // 리사이즈(가로 1080)+JPEG 압축 → base64 (전송량↓, OCR 품질 유지)
+      const manip = await manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1080 } }],
+        { compress: 0.6, format: SaveFormat.JPEG, base64: true }
+      );
+      if (!manip.base64) { setImgBusy(false); setImgError('이미지 처리에 실패했어요. 다른 사진으로 시도해보세요.'); return; }
+
+      const result = await ocrPortfolioImage(manip.base64, 'image/jpeg');
+      const stocks = result?.stocks || [];
+      if (stocks.length === 0) {
+        setImgError('종목을 인식하지 못했어요. 보유종목(종목명·수량·평단가)이 잘 보이게 캡처해 다시 시도해주세요.');
+        setImgBusy(false);
+        return;
+      }
+      setPasteRows(stocks.map((s, i) => ({
+        _id: i,
+        name: s.name || '',
+        code: s.code || '',
+        shares: String(s.shares || ''),
+        avgPrice: String(s.avgPrice || ''),
+        include: true,
+      })));
+      setImgBusy(false);
+    } catch (e) {
+      setImgBusy(false);
+      const msg = e?.response?.data?.error || e?.message || '알 수 없는 오류';
+      setImgError('인식 실패: ' + msg);
+    }
   };
 
   // ── 붙여넣기: 텍스트 분석 ──
@@ -1146,6 +1199,15 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
 
               <Text style={styles.modalSubtitle}>추가 방법을 선택하세요</Text>
 
+              <TouchableOpacity style={[addStyles.optionBtn, { borderColor: '#00D9FF55', marginBottom: 10 }]} onPress={() => setMode('image')}>
+                <Text style={addStyles.optionIcon}>📷</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[addStyles.optionTitle, { color: '#00D9FF' }]}>사진으로 추가 (추천)</Text>
+                  <Text style={addStyles.optionDesc}>증권사 보유종목 화면 캡처 → 사진 선택만 하면 자동 인식</Text>
+                </View>
+                <Text style={addStyles.optionArrow}>›</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity style={addStyles.optionBtn} onPress={() => setMode('manual')}>
                 <Text style={addStyles.optionIcon}>✏️</Text>
                 <View style={{ flex: 1 }}>
@@ -1158,8 +1220,8 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
               <TouchableOpacity style={[addStyles.optionBtn, { borderColor: '#A78BFA40', marginTop: 10 }]} onPress={() => setMode('paste')}>
                 <Text style={addStyles.optionIcon}>📋</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={[addStyles.optionTitle, { color: '#A78BFA' }]}>텍스트 붙여넣기 (추천)</Text>
-                  <Text style={addStyles.optionDesc}>증권사 화면을 휴대폰으로 텍스트 인식 → 복사 → 붙여넣기</Text>
+                  <Text style={[addStyles.optionTitle, { color: '#A78BFA' }]}>텍스트 붙여넣기</Text>
+                  <Text style={addStyles.optionDesc}>인식이 잘 안 될 때: 텍스트로 복사 → 붙여넣기</Text>
                 </View>
                 <Text style={addStyles.optionArrow}>›</Text>
               </TouchableOpacity>
@@ -1174,12 +1236,11 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
               </TouchableOpacity>
 
               <View style={addStyles.hintBox}>
-                <Text style={addStyles.hintText}>💡 텍스트 붙여넣기 방법</Text>
+                <Text style={addStyles.hintText}>💡 가장 쉬운 방법: 사진으로 추가</Text>
                 <Text style={addStyles.hintDesc}>
-                  ① 증권사 앱 보유종목 화면을 캡처{'\n'}
-                  ② 사진 앱에서 사진 열고 텍스트 길게 눌러 전체 선택·복사{'\n'}
-                  {'   '}(아이폰: 텍스트 인식 / 안드로이드: 구글 렌즈){'\n'}
-                  ③ 여기 "텍스트 붙여넣기"에 붙여넣기
+                  ① 증권사 앱 보유종목 화면을 캡처(스크린샷){'\n'}
+                  ② "사진으로 추가" → 그 캡처 사진 선택{'\n'}
+                  ③ 자동 인식된 목록에서 틀린 것만 고치고 추가
                 </Text>
               </View>
 
@@ -1295,15 +1356,34 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
             </>
           )}
 
-          {/* ── 텍스트 붙여넣기 ── */}
-          {mode === 'paste' && (
+          {/* ── 텍스트 붙여넣기 / 사진 OCR (확인·추가 UI 공용) ── */}
+          {(mode === 'paste' || mode === 'image') && (
             <>
-              <TouchableOpacity onPress={() => { setMode(null); setPasteText(''); setPasteRows([]); }} style={addStyles.backBtn}>
+              <TouchableOpacity onPress={() => { setMode(null); setPasteText(''); setPasteRows([]); setImgError(''); }} style={addStyles.backBtn}>
                 <Text style={addStyles.backText}>‹ 뒤로</Text>
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>텍스트 붙여넣기</Text>
+              <Text style={styles.modalTitle}>{mode === 'image' ? '사진으로 추가' : '텍스트 붙여넣기'}</Text>
 
               {pasteRows.length === 0 ? (
+                mode === 'image' ? (
+                  <>
+                    <Text style={addStyles.pasteGuide}>
+                      증권사 앱의 보유종목 화면을 캡처(스크린샷)한 뒤, 아래에서 그 사진을 선택하세요.
+                      종목명·수량·평단가를 자동으로 읽어옵니다.
+                    </Text>
+                    {imgError ? <Text style={{ color: '#FF6B82', fontSize: 13, marginBottom: 10 }}>{imgError}</Text> : null}
+                    <TouchableOpacity
+                      style={[styles.addBtn, { marginTop: 4, backgroundColor: '#00D9FF' }]}
+                      onPress={handlePickImage}
+                      disabled={imgBusy}
+                    >
+                      {imgBusy
+                        ? <ActivityIndicator color="#0A0E27" />
+                        : <Text style={styles.addBtnText}>📷 사진 선택</Text>}
+                    </TouchableOpacity>
+                    {imgBusy && <Text style={{ color: '#8A9BAE', fontSize: 12, textAlign: 'center', marginTop: 10 }}>이미지에서 종목을 읽는 중...</Text>}
+                  </>
+                ) : (
                 <>
                   <Text style={addStyles.pasteGuide}>
                     증권사 보유종목 화면을 휴대폰으로 텍스트 인식(아이폰)·구글렌즈(안드로이드)한 뒤,
@@ -1325,6 +1405,7 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                     <Text style={styles.addBtnText}>분석하기</Text>
                   </TouchableOpacity>
                 </>
+                )
               ) : (
                 <>
                   <Text style={addStyles.parsedCount}>

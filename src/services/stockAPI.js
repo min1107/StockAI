@@ -16,6 +16,16 @@ const getServerUrl = () => {
 
 const SERVER = getServerUrl();
 
+// 포트폴리오 스크린샷 OCR — 압축된 base64 이미지를 서버(Gemini Vision)로 보내 종목 추출
+export const ocrPortfolioImage = async (imageBase64, mimeType = 'image/jpeg') => {
+  const res = await axios.post(
+    `${SERVER}/api/ai/ocr-portfolio`,
+    { imageBase64, mimeType },
+    { timeout: 45000, headers: { 'Content-Type': 'application/json' } }
+  );
+  return res.data; // { stocks: [{code,name,shares,avgPrice}], count }
+};
+
 // 한국 주식인지 확인하는 헬퍼 함수
 const isKoreanStock = (symbol) => {
   return symbol.endsWith('.KS') || symbol.endsWith('.KQ');

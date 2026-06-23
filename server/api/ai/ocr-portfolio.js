@@ -46,19 +46,43 @@ module.exports = async (req, res) => {
             { inline_data: { mime_type: mimeType, data: imageBase64 } },
           ],
         }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 4096,                 // 종목 많아도 JSON 안 잘리게 넉넉히
+          responseMimeType: 'application/json',   // JSON만 받도록 강제(파싱 안정)
+          thinkingConfig: { thinkingBudget: 0 },  // 2.5-flash 추론(thinking) 끔 → 출력토큰 답에 집중
+        },
       },
       { timeout: 30000 }
     );
 
-    const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const cand = response.data.candidates?.[0];
+    const raw = cand?.content?.parts?.map(p => p.text).filter(Boolean).join('') || '';
+    if (!raw) {
+      // 차단/빈응답 등 원인 노출 (디버깅 가능하게)
+      return res.status(422).json({
+        error: '종목을 인식하지 못했습니다.',
+        finishReason: cand?.finishReason,
+        promptFeedback: response.data.promptFeedback,
+      });
+    }
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return res.status(422).json({ error: '종목을 인식하지 못했습니다.' });
+    if (!jsonMatch) return res.status(422).json({ error: '종목을 인식하지 못했습니다.', sample: raw.slice(0, 120) });
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    const stocks = (parsed.stocks || []).filter(s => s.name && s.shares > 0 && s.avgPrice > 0);
+    let parsed;
+    try { parsed = JSON.parse(jsonMatch[0]); }
+    catch { return res.status(422).json({ error: '인식 결과 형식 오류(JSON 파싱 실패)', sample: raw.slice(0, 120) }); }
 
-    res.status(200).json({ stocks });
+    const stocks = (parsed.stocks || [])
+      .map(s => ({
+        code: String(s.code || '').replace(/[^0-9]/g, '').slice(0, 6),
+        name: String(s.name || '').trim(),
+        shares: Number(String(s.shares).replace(/[^0-9.]/g, '')) || 0,
+        avgPrice: Number(String(s.avgPrice).replace(/[^0-9.]/g, '')) || 0,
+      }))
+      .filter(s => s.name && s.shares > 0 && s.avgPrice > 0);
+
+    res.status(200).json({ stocks, count: stocks.length });
   } catch (error) {
     const detail = error.response?.data?.error;
     console.error('OCR 실패:', error.message, JSON.stringify(detail || {}));
