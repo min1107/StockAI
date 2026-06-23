@@ -73,16 +73,23 @@ module.exports = async (req, res) => {
     try { parsed = JSON.parse(jsonMatch[0]); }
     catch { return res.status(422).json({ error: '인식 결과 형식 오류(JSON 파싱 실패)', sample: raw.slice(0, 120) }); }
 
+    // 부족해도 버리지 않고 '뭐가 빠졌는지(missing)' 표시. 이름은 있어야 식별 가능 → 이름 없는 것만 제외.
+    //  - missing: 사용자가 채워야 하는 항목만(수량/평단가). 종목코드는 앱이 종목명으로 자동검색하므로 제외.
     const stocks = (parsed.stocks || [])
-      .map(s => ({
-        code: String(s.code || '').replace(/[^0-9]/g, '').slice(0, 6),
-        name: String(s.name || '').trim(),
-        shares: Number(String(s.shares).replace(/[^0-9.]/g, '')) || 0,
-        avgPrice: Number(String(s.avgPrice).replace(/[^0-9.]/g, '')) || 0,
-      }))
-      .filter(s => s.name && s.shares > 0 && s.avgPrice > 0);
+      .map(s => {
+        const code = String(s.code || '').replace(/[^0-9]/g, '').slice(0, 6);
+        const name = String(s.name || '').trim();
+        const shares = Number(String(s.shares).replace(/[^0-9.]/g, '')) || 0;
+        const avgPrice = Number(String(s.avgPrice).replace(/[^0-9.]/g, '')) || 0;
+        const missing = [];
+        if (shares <= 0) missing.push('shares');
+        if (avgPrice <= 0) missing.push('avgPrice');
+        return { code, name, shares, avgPrice, missing };
+      })
+      .filter(s => s.name);
 
-    res.status(200).json({ stocks, count: stocks.length });
+    const completeCount = stocks.filter(s => s.missing.length === 0).length;
+    res.status(200).json({ stocks, count: stocks.length, completeCount });
   } catch (error) {
     const detail = error.response?.data?.error;
     console.error('OCR 실패:', error.message, JSON.stringify(detail || {}));

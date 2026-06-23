@@ -913,6 +913,13 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
   // 사진(스크린샷) OCR state
   const [imgBusy, setImgBusy] = useState(false);
   const [imgError, setImgError] = useState('');
+  const [editingId, setEditingId] = useState(null); // 완전한 행을 탭해 펼쳐 수정 중인 행
+
+  // 행 완전 여부: 이름 + 수량>0 + 평단가>0 (코드는 추가 시 종목명으로 자동검색)
+  const rowComplete = (r) =>
+    !!((r.name || '').trim()) &&
+    parseInt(String(r.shares).replace(/,/g, '')) > 0 &&
+    parseInt(String(r.avgPrice).replace(/,/g, '')) > 0;
 
   // 계좌 선택 state
   const [targetAccountId, setTargetAccountId] = useState(null);
@@ -957,7 +964,7 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
     setStockCode(''); setStockName(''); setShares(''); setAvgPrice('');
     setCsvItems([]); setCsvError(''); setSelected({});
     setPasteText(''); setPasteRows([]);
-    setImgBusy(false); setImgError('');
+    setImgBusy(false); setImgError(''); setEditingId(null);
     setSearchQuery(''); setSearchResults([]);
     setTargetAccountId(null);
   };
@@ -1118,6 +1125,18 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
   const handlePasteAdd = async () => {
     const rows = pasteRows.filter(r => r.include);
     if (rows.length === 0) { Alert.alert('선택 없음', '추가할 종목을 선택해주세요.'); return; }
+    // 부족(수량/평단가 빈 값)한 종목이 포함돼 있으면 무엇을 채워야 하는지 콕 집어 안내하고 중단
+    const need = rows.filter(r => !rowComplete(r)).map(r => {
+      const miss = [
+        !(parseInt(String(r.shares).replace(/,/g, '')) > 0) && '수량',
+        !(parseInt(String(r.avgPrice).replace(/,/g, '')) > 0) && '평단가',
+      ].filter(Boolean).join('·');
+      return `${r.name || '(이름없음)'}: ${miss}`;
+    });
+    if (need.length > 0) {
+      Alert.alert('정보 보충 필요', `아래 종목의 정보를 채워주세요:\n\n${need.join('\n')}`);
+      return;
+    }
     setPasteBusy(true);
     let added = 0;
     const failed = [];
@@ -1408,50 +1427,93 @@ function AddHoldingModal({ visible, onClose, onAdd, accounts = [], defaultAccoun
                 )
               ) : (
                 <>
-                  <Text style={addStyles.parsedCount}>
-                    {pasteRows.length}개 인식됨 — 틀린 부분은 직접 고치세요
-                  </Text>
-                  <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-                    {pasteRows.map(row => (
-                      <View key={row._id} style={[addStyles.pasteRow, !row.include && { opacity: 0.4 }]}>
-                        <TouchableOpacity onPress={() => toggleRow(row._id)} style={[addStyles.checkbox, row.include && addStyles.checkboxOn]}>
-                          {row.include && <Text style={addStyles.checkmark}>✓</Text>}
-                        </TouchableOpacity>
-                        <View style={{ flex: 1, gap: 6 }}>
-                          <TextInput
-                            style={addStyles.pasteCellName}
-                            value={row.name}
-                            onChangeText={t => editRow(row._id, 'name', t)}
-                            placeholder="종목명"
-                            placeholderTextColor="#4A5568"
-                          />
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
-                            <TextInput
-                              style={addStyles.pasteCellNum}
-                              value={String(row.shares || '')}
-                              onChangeText={t => editRow(row._id, 'shares', t.replace(/[^0-9]/g, ''))}
-                              placeholder="수량"
-                              placeholderTextColor="#4A5568"
-                              keyboardType="numeric"
-                            />
-                            <TextInput
-                              style={addStyles.pasteCellNum}
-                              value={String(row.avgPrice || '')}
-                              onChangeText={t => editRow(row._id, 'avgPrice', t.replace(/[^0-9]/g, ''))}
-                              placeholder="평단가"
-                              placeholderTextColor="#4A5568"
-                              keyboardType="numeric"
-                            />
+                  {(() => {
+                    const total = pasteRows.length;
+                    const incomplete = pasteRows.filter(r => !rowComplete(r)).length;
+                    return (
+                      <Text style={addStyles.parsedCount}>
+                        🤖 AI가 {total}개 종목을 읽었어요
+                        {incomplete > 0 ? ` · ${total - incomplete}개 완료, ${incomplete}개 보충 필요` : ' · 모두 완료'}
+                      </Text>
+                    );
+                  })()}
+                  <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
+                    {pasteRows.map(row => {
+                      const complete = rowComplete(row);
+                      const expanded = editingId === row._id;
+                      const sharesMissing = !(parseInt(String(row.shares).replace(/,/g, '')) > 0);
+                      const priceMissing = !(parseInt(String(row.avgPrice).replace(/,/g, '')) > 0);
+
+                      // 완전한 종목 + 안 펼침 → 깔끔한 읽기 칩 (탭하면 수정)
+                      if (complete && !expanded) {
+                        return (
+                          <View key={row._id} style={[addStyles.ocrRowOk, !row.include && { opacity: 0.4 }]}>
+                            <TouchableOpacity onPress={() => toggleRow(row._id)} style={[addStyles.checkbox, row.include && addStyles.checkboxOn]}>
+                              {row.include && <Text style={addStyles.checkmark}>✓</Text>}
+                            </TouchableOpacity>
+                            <TouchableOpacity style={{ flex: 1 }} activeOpacity={0.6} onPress={() => setEditingId(row._id)}>
+                              <Text style={addStyles.ocrName} numberOfLines={1}>{row.name}</Text>
+                              <Text style={addStyles.ocrSub}>
+                                {Number(String(row.shares).replace(/,/g, '')).toLocaleString()}주 · {Number(String(row.avgPrice).replace(/,/g, '')).toLocaleString()}원
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setEditingId(row._id)} style={addStyles.ocrEdit}>
+                              <Text style={addStyles.ocrEditText}>수정</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => removeRow(row._id)} style={addStyles.pasteDel}>
+                              <Text style={{ color: '#FF4466', fontSize: 18 }}>×</Text>
+                            </TouchableOpacity>
                           </View>
+                        );
+                      }
+
+                      // 부족 or 편집중 → 입력 폼 (부족 칸 빨간 강조)
+                      return (
+                        <View key={row._id} style={[addStyles.pasteRow, !row.include && { opacity: 0.4 }, !complete && addStyles.ocrRowWarn]}>
+                          <TouchableOpacity onPress={() => toggleRow(row._id)} style={[addStyles.checkbox, row.include && addStyles.checkboxOn]}>
+                            {row.include && <Text style={addStyles.checkmark}>✓</Text>}
+                          </TouchableOpacity>
+                          <View style={{ flex: 1, gap: 6 }}>
+                            <TextInput
+                              style={addStyles.pasteCellName}
+                              value={row.name}
+                              onChangeText={t => editRow(row._id, 'name', t)}
+                              placeholder="종목명"
+                              placeholderTextColor="#4A5568"
+                            />
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              <TextInput
+                                style={[addStyles.pasteCellNum, sharesMissing && addStyles.cellWarn]}
+                                value={String(row.shares || '')}
+                                onChangeText={t => editRow(row._id, 'shares', t.replace(/[^0-9]/g, ''))}
+                                placeholder={sharesMissing ? '수량 못읽음' : '수량'}
+                                placeholderTextColor={sharesMissing ? '#FF6B82' : '#4A5568'}
+                                keyboardType="numeric"
+                              />
+                              <TextInput
+                                style={[addStyles.pasteCellNum, priceMissing && addStyles.cellWarn]}
+                                value={String(row.avgPrice || '')}
+                                onChangeText={t => editRow(row._id, 'avgPrice', t.replace(/[^0-9]/g, ''))}
+                                placeholder={priceMissing ? '평단가 못읽음' : '평단가'}
+                                placeholderTextColor={priceMissing ? '#FF6B82' : '#4A5568'}
+                                keyboardType="numeric"
+                              />
+                            </View>
+                            {!complete && (
+                              <Text style={addStyles.ocrWarnText}>
+                                ⚠ {[sharesMissing && '수량', priceMissing && '평단가'].filter(Boolean).join('·')}를 못 읽었어요. 입력해주세요.
+                              </Text>
+                            )}
+                          </View>
+                          <TouchableOpacity onPress={() => removeRow(row._id)} style={addStyles.pasteDel}>
+                            <Text style={{ color: '#FF4466', fontSize: 18 }}>×</Text>
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity onPress={() => removeRow(row._id)} style={addStyles.pasteDel}>
-                          <Text style={{ color: '#FF4466', fontSize: 18 }}>×</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </ScrollView>
                   <View style={styles.modalBtnRow}>
-                    <TouchableOpacity style={styles.cancelBtn} onPress={() => setPasteRows([])}>
+                    <TouchableOpacity style={styles.cancelBtn} onPress={() => { setPasteRows([]); setEditingId(null); }}>
                       <Text style={styles.cancelBtnText}>다시</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.addBtn} onPress={handlePasteAdd} disabled={pasteBusy}>
@@ -1626,6 +1688,21 @@ const addStyles = StyleSheet.create({
     borderWidth: 1, borderColor: '#252A47',
   },
   pasteDel: { padding: 4 },
+
+  // OCR 결과 — 완전한 종목 읽기 칩
+  ocrRowOk: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 9, paddingHorizontal: 10, borderRadius: 10, marginBottom: 8,
+    backgroundColor: '#0E1A14', borderWidth: 1, borderColor: '#1E3A2A',
+  },
+  ocrName: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  ocrSub: { color: '#8A9BAE', fontSize: 13, marginTop: 2 },
+  ocrEdit: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: '#1E2A42' },
+  ocrEditText: { color: '#8A9BAE', fontSize: 12, fontWeight: '700' },
+  // OCR 결과 — 부족 종목 강조
+  ocrRowWarn: { borderColor: '#FF446655', backgroundColor: '#1A0E12' },
+  cellWarn: { borderColor: '#FF446680' },
+  ocrWarnText: { color: '#FF6B82', fontSize: 12, fontWeight: '600', marginTop: 2 },
 });
 
 // ── AI 진단 카드 ───────────────────────────────────────────────────
