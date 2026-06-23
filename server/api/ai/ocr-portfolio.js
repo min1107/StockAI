@@ -36,25 +36,51 @@ module.exports = async (req, res) => {
   const { imageBase64, mimeType = 'image/jpeg' } = req.body;
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 필요' });
 
+  // Gemini 호출 — 과부하(503/429/500) 시 재시도, 그래도 안 되면 다른 모델로 폴백.
+  const contents = [{
+    parts: [
+      { text: PROMPT },
+      { inline_data: { mime_type: mimeType, data: imageBase64 } },
+    ],
+  }];
+  const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash']; // 2.5 혼잡하면 2.0으로
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
   try {
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        contents: [{
-          parts: [
-            { text: PROMPT },
-            { inline_data: { mime_type: mimeType, data: imageBase64 } },
-          ],
-        }],
+    let response = null, lastErr = null;
+    outer:
+    for (const model of MODELS) {
+      const body = {
+        contents,
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 4096,                 // 종목 많아도 JSON 안 잘리게 넉넉히
-          responseMimeType: 'application/json',   // JSON만 받도록 강제(파싱 안정)
-          thinkingConfig: { thinkingBudget: 0 },  // 2.5-flash 추론(thinking) 끔 → 출력토큰 답에 집중
+          maxOutputTokens: 4096,
+          responseMimeType: 'application/json',
+          // thinking(추론)은 2.5 계열만 지원 → 2.5에서만 끔
+          ...(model.startsWith('gemini-2.5') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
         },
-      },
-      { timeout: 30000 }
-    );
+      };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+            body,
+            { timeout: 25000 }
+          );
+          lastErr = null;
+          break outer; // 성공
+        } catch (e) {
+          lastErr = e;
+          const st = e.response?.status;
+          if (st === 503 || st === 429 || st === 500) {
+            await sleep(700 * (attempt + 1)); // 일시적 과부하 → 잠깐 쉬고 재시도
+            continue;
+          }
+          break; // 그 외 오류 → 다음 모델로
+        }
+      }
+    }
+    if (!response) throw lastErr || new Error('Gemini 호출 실패');
 
     const cand = response.data.candidates?.[0];
     const raw = cand?.content?.parts?.map(p => p.text).filter(Boolean).join('') || '';
@@ -92,11 +118,19 @@ module.exports = async (req, res) => {
     res.status(200).json({ stocks, count: stocks.length, completeCount });
   } catch (error) {
     const detail = error.response?.data?.error;
-    console.error('OCR 실패:', error.message, JSON.stringify(detail || {}));
+    const st = error.response?.status;
+    console.error('OCR 실패:', st, error.message, JSON.stringify(detail || {}));
+    // 과부하(503)·쿼터(429)는 일시적 → 사용자에겐 잠시 후 재시도 안내
+    if (st === 503 || st === 429) {
+      return res.status(503).json({
+        error: 'AI 서버가 잠시 혼잡해요. 10~20초 뒤 다시 시도해주세요.',
+        transient: true,
+        geminiStatus: st,
+      });
+    }
     res.status(500).json({
-      error: '이미지 인식 실패: ' + error.message,
-      geminiStatus: error.response?.status,
-      geminiMessage: detail?.message,
+      error: '이미지 인식 실패: ' + (detail?.message || error.message),
+      geminiStatus: st,
       geminiReason: detail?.status,
     });
   }

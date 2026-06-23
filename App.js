@@ -9,23 +9,12 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/context/AuthContext';
 import { setupNotifHandler } from './src/services/notificationService';
 import { injectPWAMeta, registerServiceWorker, initInstallPrompt } from './src/services/webPush';
+import AppAlert, { showAppAlert } from './src/components/AppAlert';
 
-// react-native-web의 Alert.alert는 no-op(아무것도 안 함) → 웹에서 브라우저 대화상자로 대체.
-// 이걸로 앱 전체의 성공/실패 배너 + 삭제 확인창(onPress 콜백)이 웹에서도 동작함.
+// react-native-web의 Alert.alert는 no-op → 앱 자체 커스텀 알림(AppAlert)으로 대체.
+// (브라우저 기본 confirm/alert는 사이트 주소를 강제 노출 → 커스텀 모달로 깔끔하게)
 if (Platform.OS === 'web') {
-  Alert.alert = (title, message, buttons) => {
-    const text = [title, message].filter(Boolean).join('\n\n');
-    if (Array.isArray(buttons) && buttons.length > 1) {
-      const cancelBtn = buttons.find(b => b.style === 'cancel');
-      const actionBtns = buttons.filter(b => b.style !== 'cancel');
-      const ok = typeof window !== 'undefined' && window.confirm(text);
-      if (ok) { actionBtns[actionBtns.length - 1]?.onPress?.(); }
-      else { cancelBtn?.onPress?.(); }
-    } else {
-      if (typeof window !== 'undefined') window.alert(text);
-      buttons?.[0]?.onPress?.();
-    }
-  };
+  Alert.alert = (title, message, buttons) => showAppAlert(title, message, buttons);
 }
 import HomeScreen from './src/screens/HomeScreen';
 import StockDetailScreen from './src/screens/StockDetailScreen';
@@ -167,6 +156,7 @@ export default function App() {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <OnboardingScreen onComplete={() => setOnboardingDone(true)} />
+        <AppAlert />
       </GestureHandlerRootView>
     );
   }
@@ -179,6 +169,7 @@ export default function App() {
           <MainTabs />
         </NavigationContainer>
       </AuthProvider>
+      <AppAlert />
     </GestureHandlerRootView>
   );
 }
