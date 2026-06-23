@@ -3,6 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -374,7 +375,8 @@ function HoldingCard({ item, aiItem, onDelete, onPress }) {
 }
 
 // ── 계좌별 종목 행 (compact 2-line) ───────────────────────────────
-function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
+// 옆으로 스와이프(왼쪽으로 밀기)하면 이동/삭제 버튼이 나옴 (롱프레스가 모바일 웹에서 텍스트선택으로 먹히는 문제 해결)
+function CompactHoldingRow({ item, aiItem, onPress, onMove, onRequestDelete }) {
   const hasPrice  = item.currentPrice != null;
   const perShare  = hasPrice ? item.currentPrice - item.avg_price : null;        // 한 주당 손익
   const totalPnl  = hasPrice ? perShare * item.shares : null;                    // 평가손익
@@ -386,12 +388,24 @@ function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
   const code      = item.stock_code;
   const fmtSigned = (v) => (v >= 0 ? '+' : '-') + fmtMoney(code, Math.abs(v));
 
+  const renderRightActions = () => (
+    <View style={cStyles.swipeWrap}>
+      <TouchableOpacity style={[cStyles.swipeBtn, { backgroundColor: '#2A3354' }]} onPress={() => onMove && onMove(item)}>
+        <Text style={cStyles.swipeIcon}>📁</Text>
+        <Text style={cStyles.swipeText}>이동</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[cStyles.swipeBtn, { backgroundColor: '#FF4466' }]} onPress={() => onRequestDelete && onRequestDelete(item)}>
+        <Text style={cStyles.swipeIcon}>🗑</Text>
+        <Text style={cStyles.swipeText}>삭제</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
+    <Swipeable renderRightActions={renderRightActions} overshootRight={false} friction={2} rightThreshold={36}>
     <TouchableOpacity
       style={cStyles.card}
       onPress={onPress}
-      onLongPress={() => onActionMenu && onActionMenu(item)}
-      delayLongPress={280}
       activeOpacity={0.85}
     >
       {/* 헤더: 종목명 + 코드 / 평가손익 + 수익률 */}
@@ -446,11 +460,16 @@ function CompactHoldingRow({ item, aiItem, onPress, onActionMenu }) {
 
       {aiItem?.reason ? <Text style={cStyles.aiReason} numberOfLines={1}>▸ {aiItem.reason}</Text> : null}
     </TouchableOpacity>
+    </Swipeable>
   );
 }
 
 const cStyles = StyleSheet.create({
-  card: { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#1A2040' },
+  card: { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#1A2040', backgroundColor: '#0A0E27' },
+  swipeWrap: { flexDirection: 'row', alignItems: 'stretch' },
+  swipeBtn: { width: 64, justifyContent: 'center', alignItems: 'center' },
+  swipeIcon: { fontSize: 16, marginBottom: 2 },
+  swipeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 9 },
   name: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3, flexShrink: 1 },
   code: { fontSize: 10.5, color: '#5B6478' },
@@ -520,7 +539,7 @@ const tabStyles = StyleSheet.create({
 });
 
 // ── 계좌 섹션 카드 ────────────────────────────────────────────────────
-function AccountSection({ account, holdings, diagnosis, navigation, onActionMenu, fxRate }) {
+function AccountSection({ account, holdings, diagnosis, navigation, onMove, onRequestDelete, fxRate }) {
   // 계좌 안에 한국·미국 섞일 수 있으므로 원화 환산 합산
   const buy   = holdings.reduce((s, h) => s + toKRW(h.stock_code, h.avg_price * h.shares, fxRate), 0);
   const eval_ = holdings.reduce((s, h) => s + toKRW(h.stock_code, (h.currentPrice ?? h.avg_price) * h.shares, fxRate), 0);
@@ -564,7 +583,8 @@ function AccountSection({ account, holdings, diagnosis, navigation, onActionMenu
               key={item.id}
               item={item}
               aiItem={aiItem}
-              onActionMenu={onActionMenu}
+              onMove={onMove}
+              onRequestDelete={onRequestDelete}
               onPress={() => navigation.navigate('StockDetail', { symbol, name: item.stock_name })}
             />
           );
@@ -2075,7 +2095,8 @@ export default function PortfolioScreen({ navigation }) {
                 holdings={ah}
                 diagnosis={diagnosis}
                 navigation={navigation}
-                onActionMenu={setActionTarget}
+                onMove={setMoveTarget}
+                onRequestDelete={(it) => handleDelete(it.id, it.stock_name)}
                 fxRate={fxRate}
               />
             ))}
@@ -2085,7 +2106,8 @@ export default function PortfolioScreen({ navigation }) {
                 holdings={unassigned}
                 diagnosis={diagnosis}
                 navigation={navigation}
-                onActionMenu={setActionTarget}
+                onMove={setMoveTarget}
+                onRequestDelete={(it) => handleDelete(it.id, it.stock_name)}
                 fxRate={fxRate}
               />
             )}
@@ -2096,7 +2118,8 @@ export default function PortfolioScreen({ navigation }) {
             holdings={visibleHoldings}
             diagnosis={diagnosis}
             navigation={navigation}
-            onActionMenu={setActionTarget}
+            onMove={setMoveTarget}
+            onRequestDelete={(it) => handleDelete(it.id, it.stock_name)}
             fxRate={fxRate}
           />
         )}
