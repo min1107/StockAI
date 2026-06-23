@@ -194,7 +194,6 @@ function AnomalyCard({ item, onPress }) {
           </View>
         )}
       </View>
-      <Text style={s.cardHint}>종목 상세 보기 →</Text>
     </TouchableOpacity>
   );
 }
