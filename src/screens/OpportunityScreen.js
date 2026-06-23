@@ -468,13 +468,13 @@ const s = StyleSheet.create({
   emptyText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
   emptySubText: { fontSize: 12, color: '#4A5568', marginTop: 6, textAlign: 'center' },
 
-  supplyRow2: { paddingHorizontal: 16, flexDirection: 'row', gap: 10 },
+  supplyRow2: { paddingHorizontal: 16, flexDirection: 'column', gap: 10 },
   supplyCard: {
-    flex: 1, backgroundColor: '#12172E', borderRadius: 12, padding: 12,
+    backgroundColor: '#12172E', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
     borderWidth: 1, borderColor: '#1E2A42',
   },
-  supplyLabel: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
-  supplyRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1E2A42' },
+  supplyLabel: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  supplyRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#1E2A42' },
   supplyRank: { fontSize: 13, color: '#4A5568', width: 18, fontWeight: '700' },
   supplyName: { fontSize: 14, color: '#D0D8E8', flex: 1 },
   supplyVal: { fontSize: 14, fontWeight: '700' },
