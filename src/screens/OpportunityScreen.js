@@ -162,42 +162,6 @@ function SectionHeader({ icon, title, subtitle }) {
   );
 }
 
-// ── 수급 이상 카드 ──────────────────────────────────────────────────
-function AnomalyCard({ item, onPress }) {
-  const isBoth = item.bothBuying;
-  const label = isBoth
-    ? '기관+외국인 동시 매수'
-    : item.type === 'institution'
-    ? '기관 집중 매수'
-    : '외국인 집중 매수';
-  const color = isBoth ? '#FFB800' : item.type === 'institution' ? '#00D9FF' : '#00FF88';
-
-  return (
-    <TouchableOpacity style={[s.card, { borderLeftColor: color }]} onPress={onPress} activeOpacity={0.85}>
-      <View style={s.cardTop}>
-        <Text style={s.cardName}>{item.name}</Text>
-        <View style={[s.badge, { backgroundColor: color + '20', borderColor: color + '60' }]}>
-          <Text style={[s.badgeText, { color }]}>{label}</Text>
-        </View>
-      </View>
-      <View style={s.cardMetrics}>
-        {item.dailyInst != null && item.dailyInst > 0 && (
-          <View style={s.metric}>
-            <Text style={s.metricLabel}>기관</Text>
-            <Text style={[s.metricVal, { color: '#00D9FF' }]}>+{item.dailyInst.toFixed(0)}억</Text>
-          </View>
-        )}
-        {item.dailyForeign != null && item.dailyForeign > 0 && (
-          <View style={s.metric}>
-            <Text style={s.metricLabel}>외국인</Text>
-            <Text style={[s.metricVal, { color: '#00FF88' }]}>+{item.dailyForeign.toFixed(0)}억</Text>
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 // ── 배당락일 임박 카드 ─────────────────────────────────────────────
 function DividendCard({ item, onPress }) {
   const days = item.dividendStatus.daysUntil;
@@ -240,7 +204,8 @@ function DividendCard({ item, onPress }) {
 }
 
 // ── 수급 TOP 카드 ──────────────────────────────────────────────────
-function SupplyTopCard({ items, type }) {
+// 순매수 100억↑이면 🔥(수급 이상)로 강조. 행 누르면 종목 상세로 이동.
+function SupplyTopCard({ items, type, onPressItem }) {
   if (!items || items.length === 0) return null;
   const color = type === 'inst' ? '#00D9FF' : '#00FF88';
   const label = type === 'inst' ? '기관' : '외국인';
@@ -250,14 +215,20 @@ function SupplyTopCard({ items, type }) {
       <Text style={[s.supplyLabel, { color }]}>{label} 순매수 TOP</Text>
       {items.slice(0, 5).map((item, i) => {
         const val = type === 'inst' ? item.dailyInst : item.dailyForeign;
+        const isAnomaly = val >= 100; // 단일일 100억+ 순매수 = 수급 이상
         return (
-          <View key={item.code} style={s.supplyRow}>
+          <TouchableOpacity
+            key={item.code}
+            style={s.supplyRow}
+            onPress={() => onPressItem(item)}
+            activeOpacity={0.6}
+          >
             <Text style={s.supplyRank}>{i + 1}</Text>
-            <Text style={s.supplyName}>{item.name}</Text>
+            <Text style={s.supplyName} numberOfLines={1}>{isAnomaly ? '🔥 ' : ''}{item.name}</Text>
             <Text style={[s.supplyVal, { color: val >= 0 ? color : '#FF4466' }]}>
               {val >= 0 ? '+' : ''}{val?.toFixed(0)}억
             </Text>
-          </View>
+          </TouchableOpacity>
         );
       })}
     </View>
@@ -315,6 +286,12 @@ export default function OpportunityScreen({ navigation }) {
     navigation.navigate('OpportunityStockDetail', { symbol, name });
   };
 
+  // 수급 종목 이동 — 시장(KOSDAQ=.KQ) 반영해 차트까지 정확히
+  const goSupplyDetail = (item) => {
+    const suffix = (item.market === 'KOSDAQ' || item.market === 'KQ') ? '.KQ' : '.KS';
+    navigation.navigate('OpportunityStockDetail', { symbol: `${item.code}${suffix}`, name: item.name });
+  };
+
   if (loading) {
     return (
       <View style={s.center}>
@@ -324,7 +301,6 @@ export default function OpportunityScreen({ navigation }) {
     );
   }
 
-  const hasAnomaly = (data?.supplyAnomalies?.length ?? 0) > 0;
   const hasDividend = (data?.dividendOpportunities?.length ?? 0) > 0;
 
   return (
@@ -383,36 +359,17 @@ export default function OpportunityScreen({ navigation }) {
         )}
       </View>
 
-      {/* 수급 이상 섹션 */}
-      <SectionHeader
-        icon="🔥"
-        title="수급 이상 감지"
-        subtitle="기관/외국인 단일일 100억+ 순매수"
-      />
-      {hasAnomaly ? (
-        <View style={s.cardList}>
-          {data.supplyAnomalies.map(item => (
-            <AnomalyCard
-              key={item.code}
-              item={item}
-              onPress={() => goDetail(item.code, item.name)}
-            />
-          ))}
-        </View>
-      ) : (
-        <View style={s.emptyBox}>
-          <Text style={s.emptyText}>현재 100억+ 수급 이상 종목 없음</Text>
-          <Text style={s.emptySubText}>아래 수급 TOP 현황을 참고하세요</Text>
-        </View>
-      )}
-
-      {/* 수급 TOP 현황 */}
+      {/* 수급 현황 (순위 + 🔥=100억↑ 이상) */}
       {data?.supply && (
         <>
-          <SectionHeader icon="📊" title="오늘의 수급 현황" subtitle={data.supply.collectedAt ? `수집: ${new Date(data.supply.collectedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : null} />
+          <SectionHeader
+            icon="📊"
+            title="오늘의 수급 현황"
+            subtitle={`기관/외국인 순매수 TOP · 🔥=100억+ 이상${data.supply.collectedAt ? ` · ${new Date(data.supply.collectedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준` : ''}`}
+          />
           <View style={s.supplyRow2}>
-            <SupplyTopCard items={data.supply.topInstBuy} type="inst" />
-            <SupplyTopCard items={data.supply.topForeignBuy} type="foreign" />
+            <SupplyTopCard items={data.supply.topInstBuy} type="inst" onPressItem={goSupplyDetail} />
+            <SupplyTopCard items={data.supply.topForeignBuy} type="foreign" onPressItem={goSupplyDetail} />
           </View>
         </>
       )}
